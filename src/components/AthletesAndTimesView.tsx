@@ -48,6 +48,7 @@ import {
 import {
   AlertTriangle,
   Award,
+  BarChart3,
   CheckCircle2,
   Edit3,
   Eye,
@@ -60,7 +61,7 @@ import {
   UserPlus,
   X,
 } from 'lucide-react';
-import { SwimTimeTrendChart } from './TrendCharts';
+import { AthleteCompetitionChart } from './TrendCharts';
 import { ExportActionMenu } from './ExportActionMenu';
 
 interface AthletesAndTimesViewProps {
@@ -81,6 +82,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
   onOpenPrintReport,
 }) => {
   const [activeTab, setActiveTab] = useState<'athletes' | 'times'>('athletes');
+  const [showChart, setShowChart] = useState(true);
 
   // Athlete filters
   const [athleteSearch, setAthleteSearch] = useState('');
@@ -677,31 +679,51 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
         </div>
       </div>
 
-      {/* Sub-tabs */}
-      <div className="grid grid-cols-2 sm:inline-flex items-center gap-1 p-1 bg-slate-200/70 rounded-lg w-full sm:w-fit">
+      {/* Sub-tabs + Chart Visibility Toggle */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+        <div className="grid grid-cols-2 sm:inline-flex items-center gap-1 p-1 bg-slate-200/70 rounded-lg w-full sm:w-fit">
+          <button
+            type="button"
+            onClick={() => setActiveTab('athletes')}
+            className={`px-3 sm:px-4 min-h-[44px] sm:min-h-[36px] text-xs font-semibold rounded-md transition-colors whitespace-nowrap truncate cursor-pointer ${
+              activeTab === 'athletes'
+                ? 'bg-white text-slate-900 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            Daftar Atlet ({athletes.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('times')}
+            className={`px-3 sm:px-4 min-h-[44px] sm:min-h-[36px] text-xs font-semibold rounded-md transition-colors whitespace-nowrap truncate cursor-pointer ${
+              activeTab === 'times'
+                ? 'bg-white text-slate-900 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            Catatan Waktu ({swimTimes.length})
+          </button>
+        </div>
+
         <button
           type="button"
-          onClick={() => setActiveTab('athletes')}
-          className={`px-3 sm:px-4 min-h-[44px] sm:min-h-[36px] text-xs font-semibold rounded-md transition-colors whitespace-nowrap truncate cursor-pointer ${
-            activeTab === 'athletes'
-              ? 'bg-white text-slate-900 shadow-sm'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
+          onClick={() => setShowChart((prev) => !prev)}
+          className="inline-flex items-center justify-center gap-1.5 px-3 min-h-[40px] sm:min-h-[36px] text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 whitespace-nowrap shrink-0 cursor-pointer"
         >
-          Daftar Atlet ({athletes.length})
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('times')}
-          className={`px-3 sm:px-4 min-h-[44px] sm:min-h-[36px] text-xs font-semibold rounded-md transition-colors whitespace-nowrap truncate cursor-pointer ${
-            activeTab === 'times'
-              ? 'bg-white text-slate-900 shadow-sm'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          Catatan Waktu ({swimTimes.length})
+          <BarChart3 className="w-3.5 h-3.5 text-sky-700" />
+          <span>{showChart ? 'Sembunyikan Grafik' : 'Tampilkan Grafik Waktu'}</span>
         </button>
       </div>
+
+      {/* Competition Swim Time Progression & Athlete Comparison Visualization */}
+      {showChart && (
+        <AthleteCompetitionChart
+          athletes={athletes}
+          swimTimes={swimTimes}
+          onQuickAddTime={openCreateTime}
+        />
+      )}
 
       {activeTab === 'athletes' ? (
         <>
@@ -978,9 +1000,6 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
         </>
       ) : (
         <>
-          {/* Swim Time Trend Chart */}
-          <SwimTimeTrendChart swimTimes={swimTimes} />
-
           {/* Swim Times Filters */}
           <div className="bg-white border border-slate-200 rounded-xl p-3.5 sm:p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 sm:gap-3">
             <div className="relative flex-1 lg:max-w-sm">
@@ -1282,7 +1301,13 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
               )}
 
               {detailTimes.length > 0 && (
-                <SwimTimeTrendChart swimTimes={detailTimes} compact />
+                <AthleteCompetitionChart
+                  athletes={[detailAthlete]}
+                  swimTimes={detailTimes}
+                  lockedAthleteId={detailAthlete.id}
+                  compact
+                  onQuickAddTime={openCreateTime}
+                />
               )}
 
               {/* Swim Times History */}

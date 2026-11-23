@@ -1,14 +1,17 @@
 import React, { useMemo } from 'react';
 import {
+  AGE_GROUPS,
   Athlete,
   AttendanceRecord,
   ClubAnnouncement,
   ClubInvoice,
   ClubProfile,
+  currentMonthLabel,
   FinanceTransaction,
   formatDateID,
   formatRupiah,
   SwimTime,
+  todayISO,
   TrainingSchedule,
 } from '../types/club';
 import {
@@ -94,6 +97,105 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
     () => athletes.filter((a) => a.status === 'Aktif').length,
     [athletes]
   );
+
+  const athleteSummary = useMemo(() => {
+    let active = 0;
+    let leave = 0;
+    let inactive = 0;
+    let maleActive = 0;
+    let femaleActive = 0;
+    const groupCounts = new Map<string, number>();
+
+    for (const a of athletes) {
+      if (a.status === 'Aktif') {
+        active++;
+        if (a.gender === 'Putra') maleActive++;
+        else femaleActive++;
+        groupCounts.set(a.ageGroup, (groupCounts.get(a.ageGroup) || 0) + 1);
+      } else if (a.status === 'Cuti') {
+        leave++;
+      } else {
+        inactive++;
+      }
+    }
+
+    const total = athletes.length;
+    const activePct = total > 0 ? Math.round((active / total) * 100) : 0;
+    const activeGroups = AGE_GROUPS.map((g) => ({
+      group: g,
+      count: groupCounts.get(g) || 0,
+    })).filter((item) => item.count > 0);
+
+    return {
+      total,
+      active,
+      leave,
+      inactive,
+      maleActive,
+      femaleActive,
+      activePct,
+      activeGroups,
+    };
+  }, [athletes]);
+
+  const currentMonth = useMemo(() => currentMonthLabel(), []);
+  const currentYM = useMemo(() => todayISO().slice(0, 7), []);
+
+  const currentMonthBilling = useMemo(() => {
+    const monthLower = currentMonth.trim().toLowerCase();
+    const monthInvoices = invoices.filter((inv) => {
+      if (inv.status === 'Dibatalkan') return false;
+      const period = (inv.periodMonth || '').trim().toLowerCase();
+      if (period) return period === monthLower;
+      return inv.dueDate.startsWith(currentYM);
+    });
+
+    let totalAmount = 0;
+    let paidCount = 0;
+    let paidAmount = 0;
+    let pendingCount = 0;
+    let pendingAmount = 0;
+    let overdueCount = 0;
+    let overdueAmount = 0;
+
+    const invoicedSppAthleteIds = new Set<string>();
+    for (const inv of monthInvoices) {
+      totalAmount += inv.amount;
+      if (inv.category === 'Iuran Bulanan (SPP)') {
+        invoicedSppAthleteIds.add(inv.athleteId);
+      }
+      if (inv.status === 'Lunas') {
+        paidCount++;
+        paidAmount += inv.amount;
+      } else if (inv.status === 'Jatuh Tempo') {
+        overdueCount++;
+        overdueAmount += inv.amount;
+      } else {
+        pendingCount++;
+        pendingAmount += inv.amount;
+      }
+    }
+
+    const activeWithoutSppCount = athletes.filter(
+      (a) => a.status === 'Aktif' && a.monthlyFee > 0 && !invoicedSppAthleteIds.has(a.id)
+    ).length;
+
+    const collectionRatePct =
+      totalAmount > 0 ? Math.round((paidAmount / totalAmount) * 100) : 0;
+
+    return {
+      totalCount: monthInvoices.length,
+      totalAmount,
+      paidCount,
+      paidAmount,
+      pendingCount,
+      pendingAmount,
+      overdueCount,
+      overdueAmount,
+      collectionRatePct,
+      activeWithoutSppCount,
+    };
+  }, [invoices, athletes, currentMonth, currentYM]);
 
   const unpaidInvoices = useMemo(
     () => invoices.filter((i) => i.status === 'Belum Lunas' || i.status === 'Jatuh Tempo'),
@@ -230,6 +332,203 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           </button>
         </div>
       )}
+
+      {/* Executive Login Brief: Active Athletes & Current Month Billing Status */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5">
+        {/* Card 1: Active Athletes Quick Brief */}
+        <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 flex flex-col justify-between gap-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="font-display text-sm sm:text-base font-semibold text-slate-900">
+                Ringkasan Atlet Aktif
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {athleteSummary.total === 0
+                  ? 'Belum ada atlet terdaftar di klub'
+                  : `${athleteSummary.total} atlet terdaftar · ${athleteSummary.activePct}% berstatus aktif`}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => onNavigate('athletes')}
+              className="text-xs font-medium text-sky-700 hover:text-sky-800 inline-flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              Kelola Atlet <ArrowUpRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className="space-y-2.5">
+            <div className="flex items-baseline justify-between gap-2">
+              <div className="font-mono-tabular text-2xl sm:text-3xl font-bold text-slate-900">
+                {athleteSummary.active}{' '}
+                <span className="text-xs sm:text-sm font-normal text-slate-500">atlet aktif</span>
+              </div>
+              <div className="text-xs font-mono-tabular text-slate-600">
+                Putra {athleteSummary.maleActive} · Putri {athleteSummary.femaleActive}
+              </div>
+            </div>
+
+            {athleteSummary.total > 0 && (
+              <div
+                className="h-2 w-full bg-slate-100 rounded-full overflow-hidden flex"
+                aria-label="Distribusi status atlet"
+              >
+                {athleteSummary.active > 0 && (
+                  <div
+                    className="h-full bg-emerald-600"
+                    style={{ width: `${(athleteSummary.active / athleteSummary.total) * 100}%` }}
+                  />
+                )}
+                {athleteSummary.leave > 0 && (
+                  <div
+                    className="h-full bg-amber-500"
+                    style={{ width: `${(athleteSummary.leave / athleteSummary.total) * 100}%` }}
+                  />
+                )}
+                {athleteSummary.inactive > 0 && (
+                  <div
+                    className="h-full bg-slate-400"
+                    style={{ width: `${(athleteSummary.inactive / athleteSummary.total) * 100}%` }}
+                  />
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="pt-3 border-t border-slate-100 space-y-2">
+            <div className="grid grid-cols-3 divide-x divide-slate-200 text-xs">
+              <div className="pr-2">
+                <span className="text-slate-500 block">Aktif Berlatih</span>
+                <span className="font-mono-tabular font-semibold text-emerald-700">
+                  {athleteSummary.active} atlet
+                </span>
+              </div>
+              <div className="px-3">
+                <span className="text-slate-500 block">Cuti / Izin</span>
+                <span className="font-mono-tabular font-semibold text-amber-700">
+                  {athleteSummary.leave} atlet
+                </span>
+              </div>
+              <div className="pl-3">
+                <span className="text-slate-500 block">Nonaktif</span>
+                <span className="font-mono-tabular font-semibold text-slate-600">
+                  {athleteSummary.inactive} atlet
+                </span>
+              </div>
+            </div>
+            <p className="text-[11px] text-slate-500 truncate">
+              {athleteSummary.activeGroups.length > 0
+                ? `Kelompok aktif: ${athleteSummary.activeGroups
+                    .map((g) => `${g.group} (${g.count})`)
+                    .join(' · ')}`
+                : 'Tambahkan atlet untuk mulai memantau kelompok umur.'}
+            </p>
+          </div>
+        </div>
+
+        {/* Card 2: Current Month Billing Status Brief */}
+        <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 flex flex-col justify-between gap-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="font-display text-sm sm:text-base font-semibold text-slate-900">
+                Status Tagihan {currentMonth}
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {currentMonthBilling.totalCount === 0
+                  ? `Belum ada invoice diterbitkan untuk periode ${currentMonth}`
+                  : `${currentMonthBilling.totalCount} tagihan bulan berjalan · Total ${formatRupiah(currentMonthBilling.totalAmount)}`}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => onNavigate('invoices')}
+              className="text-xs font-medium text-sky-700 hover:text-sky-800 inline-flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              Buka Tagihan <ArrowUpRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className="space-y-2.5">
+            <div className="flex items-baseline justify-between gap-2">
+              <div className="font-mono-tabular text-2xl sm:text-3xl font-bold text-slate-900">
+                {currentMonthBilling.collectionRatePct}%{' '}
+                <span className="text-xs sm:text-sm font-normal text-slate-500">terbayar</span>
+              </div>
+              <div className="text-xs font-mono-tabular text-emerald-700 font-semibold">
+                {formatRupiah(currentMonthBilling.paidAmount)} lunas
+              </div>
+            </div>
+
+            {currentMonthBilling.totalAmount > 0 && (
+              <div
+                className="h-2 w-full bg-slate-100 rounded-full overflow-hidden flex"
+                aria-label="Proporsi pelunasan tagihan bulan berjalan"
+              >
+                {currentMonthBilling.paidAmount > 0 && (
+                  <div
+                    className="h-full bg-emerald-600"
+                    style={{
+                      width: `${(currentMonthBilling.paidAmount / currentMonthBilling.totalAmount) * 100}%`,
+                    }}
+                  />
+                )}
+                {currentMonthBilling.pendingAmount > 0 && (
+                  <div
+                    className="h-full bg-amber-500"
+                    style={{
+                      width: `${(currentMonthBilling.pendingAmount / currentMonthBilling.totalAmount) * 100}%`,
+                    }}
+                  />
+                )}
+                {currentMonthBilling.overdueAmount > 0 && (
+                  <div
+                    className="h-full bg-red-600"
+                    style={{
+                      width: `${(currentMonthBilling.overdueAmount / currentMonthBilling.totalAmount) * 100}%`,
+                    }}
+                  />
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="pt-3 border-t border-slate-100 space-y-2">
+            <div className="grid grid-cols-3 divide-x divide-slate-200 text-xs">
+              <div className="pr-2 min-w-0">
+                <span className="text-slate-500 block">Lunas ({currentMonthBilling.paidCount})</span>
+                <span className="font-mono-tabular font-semibold text-emerald-700 truncate block">
+                  {formatRupiah(currentMonthBilling.paidAmount)}
+                </span>
+              </div>
+              <div className="px-3 min-w-0">
+                <span className="text-slate-500 block">
+                  Menunggu ({currentMonthBilling.pendingCount})
+                </span>
+                <span className="font-mono-tabular font-semibold text-amber-700 truncate block">
+                  {formatRupiah(currentMonthBilling.pendingAmount)}
+                </span>
+              </div>
+              <div className="pl-3 min-w-0">
+                <span className="text-slate-500 block">
+                  Jatuh Tempo ({currentMonthBilling.overdueCount})
+                </span>
+                <span className="font-mono-tabular font-semibold text-red-600 truncate block">
+                  {formatRupiah(currentMonthBilling.overdueAmount)}
+                </span>
+              </div>
+            </div>
+            <p className="text-[11px] text-slate-500 truncate">
+              {currentMonthBilling.activeWithoutSppCount > 0
+                ? `${currentMonthBilling.activeWithoutSppCount} atlet aktif belum diterbitkan SPP ${currentMonth}.`
+                : currentMonthBilling.totalCount === 0
+                ? `Gunakan Generator SPP Massal di Invoice & Adm untuk menerbitkan tagihan ${currentMonth}.`
+                : currentMonthBilling.overdueCount + currentMonthBilling.pendingCount === 0
+                ? `Seluruh tagihan periode ${currentMonth} telah lunas.`
+                : `${currentMonthBilling.pendingCount + currentMonthBilling.overdueCount} tagihan bulan ${currentMonth} menunggu pelunasan.`}
+            </p>
+          </div>
+        </div>
+      </div>
 
       {/* Priority Reminders Strip (Real data-driven alerts) */}
       {reminders.length > 0 && (
