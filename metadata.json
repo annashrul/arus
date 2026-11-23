@@ -1,0 +1,6 @@
+{
+  "name": "Tirta Aquatics — Manajemen Klub Renang",
+  "description": "Aplikasi manajemen terpadu untuk klub renang: catatan keuangan, data atlet & waktu kejuaraan, jadwal latihan, presensi, invoice SPP, dan administrasi klub.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

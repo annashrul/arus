@@ -1,0 +1,422 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default-deny global safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ---------------------------------------------------------
+    // Global Hardened Primitives
+    // ---------------------------------------------------------
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return isVerifiedUser() && request.auth.token.email == 'anashrulyusuf@gmail.com';
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isOwnerOfExisting() {
+      return isSignedIn() && existing().ownerId == request.auth.uid;
+    }
+
+    function isValidDateStr(val) {
+      return val is string && val.size() == 10 && val.matches('^\\d{4}-\\d{2}-\\d{2}$');
+    }
+
+    function isValidOptionalDateStr(val) {
+      return val is string && (val == '' || (val.size() == 10 && val.matches('^\\d{4}-\\d{2}-\\d{2}$')));
+    }
+
+    function isValidTimeStr(val) {
+      return val is string && val.size() == 5 && val.matches('^\\d{2}:\\d{2}$');
+    }
+
+    function isOwningClub(clubId) {
+      return isValidId(clubId) &&
+        exists(/databases/$(database)/documents/clubs/$(clubId)) &&
+        get(/databases/$(database)/documents/clubs/$(clubId)).data.ownerId == request.auth.uid;
+    }
+
+    function isOwningAthlete(athleteId) {
+      return isValidId(athleteId) &&
+        exists(/databases/$(database)/documents/athletes/$(athleteId)) &&
+        get(/databases/$(database)/documents/athletes/$(athleteId)).data.ownerId == request.auth.uid;
+    }
+
+    function isOwningSchedule(scheduleId) {
+      return isValidId(scheduleId) &&
+        exists(/databases/$(database)/documents/schedules/$(scheduleId)) &&
+        get(/databases/$(database)/documents/schedules/$(scheduleId)).data.ownerId == request.auth.uid;
+    }
+
+    // ---------------------------------------------------------
+    // Entity Validation Blueprints
+    // ---------------------------------------------------------
+
+    function isValidClub(data) {
+      return data.keys().hasAll(['name', 'city', 'headCoach', 'defaultMonthlyFee', 'ownerId', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['name', 'city', 'address', 'headCoach', 'phone', 'email', 'bankName', 'bankAccountNumber', 'bankAccountHolder', 'defaultMonthlyFee', 'ownerId', 'createdAt', 'updatedAt'])
+        && data.name is string && data.name.size() >= 2 && data.name.size() <= 100
+        && data.city is string && data.city.size() >= 2 && data.city.size() <= 60
+        && (!('address' in data) || (data.address is string && data.address.size() <= 200))
+        && data.headCoach is string && data.headCoach.size() >= 2 && data.headCoach.size() <= 80
+        && (!('phone' in data) || (data.phone is string && data.phone.size() <= 25))
+        && (!('email' in data) || (data.email is string && data.email.size() <= 100))
+        && (!('bankName' in data) || (data.bankName is string && data.bankName.size() <= 60))
+        && (!('bankAccountNumber' in data) || (data.bankAccountNumber is string && data.bankAccountNumber.size() <= 40))
+        && (!('bankAccountHolder' in data) || (data.bankAccountHolder is string && data.bankAccountHolder.size() <= 80))
+        && data.defaultMonthlyFee is number && data.defaultMonthlyFee >= 0 && data.defaultMonthlyFee <= 50000000
+        && isValidId(data.ownerId)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAthlete(data) {
+      return data.keys().hasAll(['clubId', 'ownerId', 'fullName', 'gender', 'birthDate', 'ageGroup', 'status', 'monthlyFee', 'joinDate', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['clubId', 'ownerId', 'fullName', 'gender', 'birthDate', 'ageGroup', 'status', 'parentName', 'parentPhone', 'coachName', 'monthlyFee', 'joinDate', 'notes', 'createdAt', 'updatedAt'])
+        && isValidId(data.clubId)
+        && isValidId(data.ownerId)
+        && data.fullName is string && data.fullName.size() >= 2 && data.fullName.size() <= 100
+        && data.gender in ['Putra', 'Putri']
+        && isValidDateStr(data.birthDate)
+        && data.ageGroup in ['Pemula', 'KU V', 'KU IV', 'KU III', 'KU II', 'KU I', 'Senior']
+        && data.status in ['Aktif', 'Cuti', 'Nonaktif']
+        && (!('parentName' in data) || (data.parentName is string && data.parentName.size() <= 100))
+        && (!('parentPhone' in data) || (data.parentPhone is string && data.parentPhone.size() <= 25))
+        && (!('coachName' in data) || (data.coachName is string && data.coachName.size() <= 80))
+        && data.monthlyFee is number && data.monthlyFee >= 0 && data.monthlyFee <= 50000000
+        && isValidDateStr(data.joinDate)
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 400))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSwimTime(data) {
+      return data.keys().hasAll(['clubId', 'ownerId', 'athleteId', 'athleteName', 'eventName', 'stroke', 'distanceMeters', 'poolCourse', 'timeMs', 'formattedTime', 'championshipName', 'meetDate', 'medal', 'isPersonalBest', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['clubId', 'ownerId', 'athleteId', 'athleteName', 'eventName', 'stroke', 'distanceMeters', 'poolCourse', 'timeMs', 'formattedTime', 'championshipName', 'meetDate', 'location', 'medal', 'isPersonalBest', 'notes', 'createdAt', 'updatedAt'])
+        && isValidId(data.clubId)
+        && isValidId(data.ownerId)
+        && isValidId(data.athleteId)
+        && data.athleteName is string && data.athleteName.size() >= 2 && data.athleteName.size() <= 100
+        && data.eventName is string && data.eventName.size() >= 2 && data.eventName.size() <= 80
+        && data.stroke in ['Gaya Bebas', 'Gaya Punggung', 'Gaya Dada', 'Gaya Kupu-Kupu', 'Gaya Ganti']
+        && data.distanceMeters is number && data.distanceMeters >= 25 && data.distanceMeters <= 10000
+        && data.poolCourse in ['50m (LCM)', '25m (SCM)']
+        && data.timeMs is number && data.timeMs > 0 && data.timeMs <= 7200000
+        && data.formattedTime is string && data.formattedTime.size() >= 4 && data.formattedTime.size() <= 15
+        && data.championshipName is string && data.championshipName.size() >= 2 && data.championshipName.size() <= 120
+        && isValidDateStr(data.meetDate)
+        && (!('location' in data) || (data.location is string && data.location.size() <= 100))
+        && data.medal in ['Emas', 'Perak', 'Perunggu', 'Finalis', 'Peserta']
+        && data.isPersonalBest is bool
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 300))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidTransaction(data) {
+      return data.keys().hasAll(['clubId', 'ownerId', 'type', 'category', 'description', 'amount', 'transactionDate', 'paymentMethod', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['clubId', 'ownerId', 'type', 'category', 'description', 'amount', 'transactionDate', 'paymentMethod', 'referenceNo', 'athleteId', 'athleteName', 'invoiceId', 'createdAt', 'updatedAt'])
+        && isValidId(data.clubId)
+        && isValidId(data.ownerId)
+        && data.type in ['pemasukan', 'pengeluaran']
+        && data.category in ['Iuran Bulanan (SPP)', 'Pendaftaran Kejuaraan', 'Perlengkapan & Atribut', 'Sewa Kolam', 'Gaji Pelatih', 'Operasional Lomba', 'Sponsor & Donasi', 'Lainnya']
+        && data.description is string && data.description.size() >= 2 && data.description.size() <= 200
+        && data.amount is number && data.amount > 0 && data.amount <= 1000000000
+        && isValidDateStr(data.transactionDate)
+        && data.paymentMethod in ['Transfer Bank', 'Tunai', 'QRIS']
+        && (!('referenceNo' in data) || (data.referenceNo is string && data.referenceNo.size() <= 60))
+        && (!('athleteId' in data) || (data.athleteId is string && data.athleteId.size() <= 128))
+        && (!('athleteName' in data) || (data.athleteName is string && data.athleteName.size() <= 100))
+        && (!('invoiceId' in data) || (data.invoiceId is string && data.invoiceId.size() <= 128))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSchedule(data) {
+      return data.keys().hasAll(['clubId', 'ownerId', 'title', 'sessionType', 'ageGroup', 'dayOfWeek', 'startTime', 'endTime', 'poolLocation', 'coachName', 'targetDistanceMeters', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['clubId', 'ownerId', 'title', 'sessionType', 'ageGroup', 'dayOfWeek', 'sessionDate', 'startTime', 'endTime', 'poolLocation', 'laneInfo', 'coachName', 'targetDistanceMeters', 'notes', 'createdAt', 'updatedAt'])
+        && isValidId(data.clubId)
+        && isValidId(data.ownerId)
+        && data.title is string && data.title.size() >= 2 && data.title.size() <= 120
+        && data.sessionType in ['Teknik & Stroke', 'Ketahanan (Endurance)', 'Kecepatan (Sprint)', 'Start & Turn', 'Simulasi Lomba', 'Latihan Fisik (Dryland)']
+        && data.ageGroup in ['Semua Kelompok', 'Pemula', 'KU V', 'KU IV', 'KU III', 'KU II', 'KU I', 'Senior']
+        && data.dayOfWeek in ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu']
+        && (!('sessionDate' in data) || isValidOptionalDateStr(data.sessionDate))
+        && isValidTimeStr(data.startTime)
+        && isValidTimeStr(data.endTime)
+        && data.poolLocation is string && data.poolLocation.size() >= 2 && data.poolLocation.size() <= 100
+        && (!('laneInfo' in data) || (data.laneInfo is string && data.laneInfo.size() <= 40))
+        && data.coachName is string && data.coachName.size() >= 2 && data.coachName.size() <= 80
+        && data.targetDistanceMeters is number && data.targetDistanceMeters >= 0 && data.targetDistanceMeters <= 30000
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 400))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidInvoice(data) {
+      return data.keys().hasAll(['clubId', 'ownerId', 'invoiceNumber', 'athleteId', 'athleteName', 'periodMonth', 'category', 'description', 'amount', 'dueDate', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['clubId', 'ownerId', 'invoiceNumber', 'athleteId', 'athleteName', 'parentName', 'parentPhone', 'periodMonth', 'category', 'description', 'amount', 'dueDate', 'status', 'paidDate', 'paymentMethod', 'notes', 'createdAt', 'updatedAt'])
+        && isValidId(data.clubId)
+        && isValidId(data.ownerId)
+        && data.invoiceNumber is string && data.invoiceNumber.size() >= 3 && data.invoiceNumber.size() <= 40
+        && isValidId(data.athleteId)
+        && data.athleteName is string && data.athleteName.size() >= 2 && data.athleteName.size() <= 100
+        && (!('parentName' in data) || (data.parentName is string && data.parentName.size() <= 100))
+        && (!('parentPhone' in data) || (data.parentPhone is string && data.parentPhone.size() <= 25))
+        && data.periodMonth is string && data.periodMonth.size() >= 3 && data.periodMonth.size() <= 30
+        && data.category in ['Iuran Bulanan (SPP)', 'Biaya Kejuaraan', 'Seragam & Perlengkapan', 'Pendaftaran Anggota Baru', 'Lainnya']
+        && data.description is string && data.description.size() >= 2 && data.description.size() <= 200
+        && data.amount is number && data.amount > 0 && data.amount <= 500000000
+        && isValidDateStr(data.dueDate)
+        && data.status in ['Belum Lunas', 'Lunas', 'Jatuh Tempo', 'Dibatalkan']
+        && (!('paidDate' in data) || isValidOptionalDateStr(data.paidDate))
+        && (!('paymentMethod' in data) || (data.paymentMethod is string && data.paymentMethod.size() <= 30))
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 300))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAttendance(data) {
+      return data.keys().hasAll(['clubId', 'ownerId', 'scheduleId', 'scheduleTitle', 'sessionDate', 'athleteId', 'athleteName', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['clubId', 'ownerId', 'scheduleId', 'scheduleTitle', 'sessionDate', 'athleteId', 'athleteName', 'status', 'notes', 'createdAt', 'updatedAt'])
+        && isValidId(data.clubId)
+        && isValidId(data.ownerId)
+        && isValidId(data.scheduleId)
+        && data.scheduleTitle is string && data.scheduleTitle.size() >= 2 && data.scheduleTitle.size() <= 120
+        && isValidDateStr(data.sessionDate)
+        && isValidId(data.athleteId)
+        && data.athleteName is string && data.athleteName.size() >= 2 && data.athleteName.size() <= 100
+        && data.status in ['Hadir', 'Izin', 'Sakit', 'Alpa']
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 200))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAnnouncement(data) {
+      return data.keys().hasAll(['clubId', 'ownerId', 'title', 'docType', 'content', 'authorName', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['clubId', 'ownerId', 'title', 'docType', 'eventDate', 'content', 'targetGroup', 'authorName', 'createdAt', 'updatedAt'])
+        && isValidId(data.clubId)
+        && isValidId(data.ownerId)
+        && data.title is string && data.title.size() >= 2 && data.title.size() <= 140
+        && data.docType in ['Pengumuman Klub', 'Surat Tugas Lomba', 'Undangan Rapat', 'Peraturan Kolam']
+        && (!('eventDate' in data) || isValidOptionalDateStr(data.eventDate))
+        && data.content is string && data.content.size() >= 5 && data.content.size() <= 2000
+        && (!('targetGroup' in data) || (data.targetGroup is string && data.targetGroup.size() <= 50))
+        && data.authorName is string && data.authorName.size() >= 2 && data.authorName.size() <= 80
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // ---------------------------------------------------------
+    // Collection Match Rules
+    // ---------------------------------------------------------
+
+    match /clubs/{clubId} {
+      allow get: if isSignedIn() && isValidId(clubId) && (isOwnerOfExisting() || isAdmin());
+      allow list: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow create: if isVerifiedUser()
+        && isValidId(clubId)
+        && isValidClub(incoming())
+        && incoming().ownerId == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser()
+        && isValidId(clubId)
+        && isValidClub(incoming())
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (isOwnerOfExisting() || isAdmin())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'city', 'address', 'headCoach', 'phone', 'email', 'bankName', 'bankAccountNumber', 'bankAccountHolder', 'defaultMonthlyFee', 'updatedAt']);
+      allow delete: if isVerifiedUser() && isValidId(clubId) && (isOwnerOfExisting() || isAdmin());
+    }
+
+    match /athletes/{athleteId} {
+      allow get: if isSignedIn() && isValidId(athleteId) && (isOwnerOfExisting() || isAdmin());
+      allow list: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow create: if isVerifiedUser()
+        && isValidId(athleteId)
+        && isValidAthlete(incoming())
+        && incoming().ownerId == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && isOwningClub(incoming().clubId);
+      allow update: if isVerifiedUser()
+        && isValidId(athleteId)
+        && isValidAthlete(incoming())
+        && incoming().ownerId == existing().ownerId
+        && incoming().clubId == existing().clubId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (isOwnerOfExisting() || isAdmin())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['fullName', 'gender', 'birthDate', 'ageGroup', 'status', 'parentName', 'parentPhone', 'coachName', 'monthlyFee', 'joinDate', 'notes', 'updatedAt']);
+      allow delete: if isVerifiedUser() && isValidId(athleteId) && (isOwnerOfExisting() || isAdmin());
+    }
+
+    match /swimTimes/{timeId} {
+      allow get: if isSignedIn() && isValidId(timeId) && (isOwnerOfExisting() || isAdmin());
+      allow list: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow create: if isVerifiedUser()
+        && isValidId(timeId)
+        && isValidSwimTime(incoming())
+        && incoming().ownerId == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && isOwningClub(incoming().clubId)
+        && isOwningAthlete(incoming().athleteId);
+      allow update: if isVerifiedUser()
+        && isValidId(timeId)
+        && isValidSwimTime(incoming())
+        && incoming().ownerId == existing().ownerId
+        && incoming().clubId == existing().clubId
+        && incoming().athleteId == existing().athleteId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (isOwnerOfExisting() || isAdmin())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['athleteName', 'eventName', 'stroke', 'distanceMeters', 'poolCourse', 'timeMs', 'formattedTime', 'championshipName', 'meetDate', 'location', 'medal', 'isPersonalBest', 'notes', 'updatedAt']);
+      allow delete: if isVerifiedUser() && isValidId(timeId) && (isOwnerOfExisting() || isAdmin());
+    }
+
+    match /transactions/{transactionId} {
+      allow get: if isSignedIn() && isValidId(transactionId) && (isOwnerOfExisting() || isAdmin());
+      allow list: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow create: if isVerifiedUser()
+        && isValidId(transactionId)
+        && isValidTransaction(incoming())
+        && incoming().ownerId == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && isOwningClub(incoming().clubId);
+      allow update: if isVerifiedUser()
+        && isValidId(transactionId)
+        && isValidTransaction(incoming())
+        && incoming().ownerId == existing().ownerId
+        && incoming().clubId == existing().clubId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (isOwnerOfExisting() || isAdmin())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['type', 'category', 'description', 'amount', 'transactionDate', 'paymentMethod', 'referenceNo', 'athleteId', 'athleteName', 'invoiceId', 'updatedAt']);
+      allow delete: if isVerifiedUser() && isValidId(transactionId) && (isOwnerOfExisting() || isAdmin());
+    }
+
+    match /schedules/{scheduleId} {
+      allow get: if isSignedIn() && isValidId(scheduleId) && (isOwnerOfExisting() || isAdmin());
+      allow list: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow create: if isVerifiedUser()
+        && isValidId(scheduleId)
+        && isValidSchedule(incoming())
+        && incoming().ownerId == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && isOwningClub(incoming().clubId);
+      allow update: if isVerifiedUser()
+        && isValidId(scheduleId)
+        && isValidSchedule(incoming())
+        && incoming().ownerId == existing().ownerId
+        && incoming().clubId == existing().clubId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (isOwnerOfExisting() || isAdmin())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'sessionType', 'ageGroup', 'dayOfWeek', 'sessionDate', 'startTime', 'endTime', 'poolLocation', 'laneInfo', 'coachName', 'targetDistanceMeters', 'notes', 'updatedAt']);
+      allow delete: if isVerifiedUser() && isValidId(scheduleId) && (isOwnerOfExisting() || isAdmin());
+    }
+
+    match /invoices/{invoiceId} {
+      allow get: if isSignedIn() && isValidId(invoiceId) && (isOwnerOfExisting() || isAdmin());
+      allow list: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow create: if isVerifiedUser()
+        && isValidId(invoiceId)
+        && isValidInvoice(incoming())
+        && incoming().ownerId == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && isOwningClub(incoming().clubId)
+        && isOwningAthlete(incoming().athleteId);
+      allow update: if isVerifiedUser()
+        && isValidId(invoiceId)
+        && isValidInvoice(incoming())
+        && incoming().ownerId == existing().ownerId
+        && incoming().clubId == existing().clubId
+        && incoming().athleteId == existing().athleteId
+        && incoming().invoiceNumber == existing().invoiceNumber
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          (isOwnerOfExisting() && (
+            (existing().status in ['Belum Lunas', 'Jatuh Tempo'] && incoming().diff(existing()).affectedKeys().hasOnly(['athleteName', 'parentName', 'parentPhone', 'periodMonth', 'category', 'description', 'amount', 'dueDate', 'status', 'paidDate', 'paymentMethod', 'notes', 'updatedAt'])) ||
+            (existing().status in ['Belum Lunas', 'Jatuh Tempo'] && incoming().status == 'Lunas' && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'paidDate', 'paymentMethod', 'notes', 'updatedAt']))
+          ))
+        );
+      allow delete: if isVerifiedUser() && isValidId(invoiceId) && (isOwnerOfExisting() || isAdmin());
+    }
+
+    match /attendance/{attendanceId} {
+      allow get: if isSignedIn() && isValidId(attendanceId) && (isOwnerOfExisting() || isAdmin());
+      allow list: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow create: if isVerifiedUser()
+        && isValidId(attendanceId)
+        && isValidAttendance(incoming())
+        && incoming().ownerId == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && isOwningClub(incoming().clubId)
+        && isOwningSchedule(incoming().scheduleId)
+        && isOwningAthlete(incoming().athleteId);
+      allow update: if isVerifiedUser()
+        && isValidId(attendanceId)
+        && isValidAttendance(incoming())
+        && incoming().ownerId == existing().ownerId
+        && incoming().clubId == existing().clubId
+        && incoming().scheduleId == existing().scheduleId
+        && incoming().athleteId == existing().athleteId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (isOwnerOfExisting() || isAdmin())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'notes', 'updatedAt']);
+      allow delete: if isVerifiedUser() && isValidId(attendanceId) && (isOwnerOfExisting() || isAdmin());
+    }
+
+    match /announcements/{announcementId} {
+      allow get: if isSignedIn() && isValidId(announcementId) && (isOwnerOfExisting() || isAdmin());
+      allow list: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow create: if isVerifiedUser()
+        && isValidId(announcementId)
+        && isValidAnnouncement(incoming())
+        && incoming().ownerId == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && isOwningClub(incoming().clubId);
+      allow update: if isVerifiedUser()
+        && isValidId(announcementId)
+        && isValidAnnouncement(incoming())
+        && incoming().ownerId == existing().ownerId
+        && incoming().clubId == existing().clubId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (isOwnerOfExisting() || isAdmin())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'docType', 'eventDate', 'content', 'targetGroup', 'authorName', 'updatedAt']);
+      allow delete: if isVerifiedUser() && isValidId(announcementId) && (isOwnerOfExisting() || isAdmin());
+    }
+  }
+}

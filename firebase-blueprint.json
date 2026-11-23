@@ -1,0 +1,217 @@
+{
+  "entities": {
+    "Club": {
+      "title": "Club",
+      "description": "Profil dan pengaturan administrasi klub renang",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "city": { "type": "string", "minLength": 2, "maxLength": 60 },
+        "address": { "type": "string", "maxLength": 200 },
+        "headCoach": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "phone": { "type": "string", "maxLength": 25 },
+        "email": { "type": "string", "maxLength": 100 },
+        "bankName": { "type": "string", "maxLength": 60 },
+        "bankAccountNumber": { "type": "string", "maxLength": 40 },
+        "bankAccountHolder": { "type": "string", "maxLength": 80 },
+        "defaultMonthlyFee": { "type": "number" },
+        "ownerId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "city", "headCoach", "defaultMonthlyFee", "ownerId", "createdAt", "updatedAt"]
+    },
+    "Athlete": {
+      "title": "Athlete",
+      "description": "Data profil atlet renang dan informasi wali",
+      "type": "object",
+      "properties": {
+        "clubId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "ownerId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "fullName": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "gender": { "type": "string", "enum": ["Putra", "Putri"] },
+        "birthDate": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$", "maxLength": 10 },
+        "ageGroup": { "type": "string", "enum": ["Pemula", "KU V", "KU IV", "KU III", "KU II", "KU I", "Senior"] },
+        "status": { "type": "string", "enum": ["Aktif", "Cuti", "Nonaktif"] },
+        "parentName": { "type": "string", "maxLength": 100 },
+        "parentPhone": { "type": "string", "maxLength": 25 },
+        "coachName": { "type": "string", "maxLength": 80 },
+        "monthlyFee": { "type": "number" },
+        "joinDate": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$", "maxLength": 10 },
+        "notes": { "type": "string", "maxLength": 400 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["clubId", "ownerId", "fullName", "gender", "birthDate", "ageGroup", "status", "monthlyFee", "joinDate", "createdAt", "updatedAt"]
+    },
+    "SwimTime": {
+      "title": "SwimTime",
+      "description": "Catatan waktu kejuaraan dan personal best atlet renang",
+      "type": "object",
+      "properties": {
+        "clubId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "ownerId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "athleteId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "athleteName": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "eventName": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "stroke": { "type": "string", "enum": ["Gaya Bebas", "Gaya Punggung", "Gaya Dada", "Gaya Kupu-Kupu", "Gaya Ganti"] },
+        "distanceMeters": { "type": "number" },
+        "poolCourse": { "type": "string", "enum": ["50m (LCM)", "25m (SCM)"] },
+        "timeMs": { "type": "number" },
+        "formattedTime": { "type": "string", "minLength": 4, "maxLength": 15 },
+        "championshipName": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "meetDate": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$", "maxLength": 10 },
+        "location": { "type": "string", "maxLength": 100 },
+        "medal": { "type": "string", "enum": ["Emas", "Perak", "Perunggu", "Finalis", "Peserta"] },
+        "isPersonalBest": { "type": "boolean" },
+        "notes": { "type": "string", "maxLength": 300 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["clubId", "ownerId", "athleteId", "athleteName", "eventName", "stroke", "distanceMeters", "poolCourse", "timeMs", "formattedTime", "championshipName", "meetDate", "medal", "isPersonalBest", "createdAt", "updatedAt"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Catatan kas keuangan pemasukan dan pengeluaran klub",
+      "type": "object",
+      "properties": {
+        "clubId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "ownerId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "type": { "type": "string", "enum": ["pemasukan", "pengeluaran"] },
+        "category": { "type": "string", "enum": ["Iuran Bulanan (SPP)", "Pendaftaran Kejuaraan", "Perlengkapan & Atribut", "Sewa Kolam", "Gaji Pelatih", "Operasional Lomba", "Sponsor & Donasi", "Lainnya"] },
+        "description": { "type": "string", "minLength": 2, "maxLength": 200 },
+        "amount": { "type": "number" },
+        "transactionDate": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$", "maxLength": 10 },
+        "paymentMethod": { "type": "string", "enum": ["Transfer Bank", "Tunai", "QRIS"] },
+        "referenceNo": { "type": "string", "maxLength": 60 },
+        "athleteId": { "type": "string", "maxLength": 128 },
+        "athleteName": { "type": "string", "maxLength": 100 },
+        "invoiceId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["clubId", "ownerId", "type", "category", "description", "amount", "transactionDate", "paymentMethod", "createdAt", "updatedAt"]
+    },
+    "TrainingSchedule": {
+      "title": "TrainingSchedule",
+      "description": "Jadwal latihan rutin dan sesi persiapan kejuaraan",
+      "type": "object",
+      "properties": {
+        "clubId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "ownerId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "title": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "sessionType": { "type": "string", "enum": ["Teknik & Stroke", "Ketahanan (Endurance)", "Kecepatan (Sprint)", "Start & Turn", "Simulasi Lomba", "Latihan Fisik (Dryland)"] },
+        "ageGroup": { "type": "string", "enum": ["Semua Kelompok", "Pemula", "KU V", "KU IV", "KU III", "KU II", "KU I", "Senior"] },
+        "dayOfWeek": { "type": "string", "enum": ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"] },
+        "sessionDate": { "type": "string", "maxLength": 10 },
+        "startTime": { "type": "string", "pattern": "^\\d{2}:\\d{2}$", "maxLength": 5 },
+        "endTime": { "type": "string", "pattern": "^\\d{2}:\\d{2}$", "maxLength": 5 },
+        "poolLocation": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "laneInfo": { "type": "string", "maxLength": 40 },
+        "coachName": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "targetDistanceMeters": { "type": "number" },
+        "notes": { "type": "string", "maxLength": 400 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["clubId", "ownerId", "title", "sessionType", "ageGroup", "dayOfWeek", "startTime", "endTime", "poolLocation", "coachName", "targetDistanceMeters", "createdAt", "updatedAt"]
+    },
+    "Invoice": {
+      "title": "Invoice",
+      "description": "Tagihan SPP bulanan, biaya kejuaraan, dan administrasi atlet",
+      "type": "object",
+      "properties": {
+        "clubId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "ownerId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "invoiceNumber": { "type": "string", "minLength": 3, "maxLength": 40 },
+        "athleteId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "athleteName": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "parentName": { "type": "string", "maxLength": 100 },
+        "parentPhone": { "type": "string", "maxLength": 25 },
+        "periodMonth": { "type": "string", "minLength": 3, "maxLength": 30 },
+        "category": { "type": "string", "enum": ["Iuran Bulanan (SPP)", "Biaya Kejuaraan", "Seragam & Perlengkapan", "Pendaftaran Anggota Baru", "Lainnya"] },
+        "description": { "type": "string", "minLength": 2, "maxLength": 200 },
+        "amount": { "type": "number" },
+        "dueDate": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$", "maxLength": 10 },
+        "status": { "type": "string", "enum": ["Belum Lunas", "Lunas", "Jatuh Tempo", "Dibatalkan"] },
+        "paidDate": { "type": "string", "maxLength": 10 },
+        "paymentMethod": { "type": "string", "maxLength": 30 },
+        "notes": { "type": "string", "maxLength": 300 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["clubId", "ownerId", "invoiceNumber", "athleteId", "athleteName", "periodMonth", "category", "description", "amount", "dueDate", "status", "createdAt", "updatedAt"]
+    },
+    "Attendance": {
+      "title": "Attendance",
+      "description": "Rekap presensi kehadiran atlet pada sesi latihan",
+      "type": "object",
+      "properties": {
+        "clubId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "ownerId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "scheduleId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "scheduleTitle": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "sessionDate": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$", "maxLength": 10 },
+        "athleteId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "athleteName": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "status": { "type": "string", "enum": ["Hadir", "Izin", "Sakit", "Alpa"] },
+        "notes": { "type": "string", "maxLength": 200 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["clubId", "ownerId", "scheduleId", "scheduleTitle", "sessionDate", "athleteId", "athleteName", "status", "createdAt", "updatedAt"]
+    },
+    "Announcement": {
+      "title": "Announcement",
+      "description": "Surat administrasi, surat tugas kejuaraan, dan pengumuman resmi klub",
+      "type": "object",
+      "properties": {
+        "clubId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "ownerId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "title": { "type": "string", "minLength": 2, "maxLength": 140 },
+        "docType": { "type": "string", "enum": ["Pengumuman Klub", "Surat Tugas Lomba", "Undangan Rapat", "Peraturan Kolam"] },
+        "eventDate": { "type": "string", "maxLength": 10 },
+        "content": { "type": "string", "minLength": 5, "maxLength": 2000 },
+        "targetGroup": { "type": "string", "maxLength": 50 },
+        "authorName": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["clubId", "ownerId", "title", "docType", "content", "authorName", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/clubs/{clubId}": {
+      "schema": { "$ref": "#/entities/Club" },
+      "description": "Profil dan konfigurasi rekening/administrasi klub renang"
+    },
+    "/athletes/{athleteId}": {
+      "schema": { "$ref": "#/entities/Athlete" },
+      "description": "Daftar atlet renang, kelompok umur, dan kontak orang tua"
+    },
+    "/swimTimes/{timeId}": {
+      "schema": { "$ref": "#/entities/SwimTime" },
+      "description": "Catatan waktu resmi kejuaraan dan personal best per atlet"
+    },
+    "/transactions/{transactionId}": {
+      "schema": { "$ref": "#/entities/Transaction" },
+      "description": "Buku kas pemasukan dan pengeluaran klub"
+    },
+    "/schedules/{scheduleId}": {
+      "schema": { "$ref": "#/entities/TrainingSchedule" },
+      "description": "Jadwal latihan kolam dan dryland per kelompok umur"
+    },
+    "/invoices/{invoiceId}": {
+      "schema": { "$ref": "#/entities/Invoice" },
+      "description": "Invoice tagihan SPP dan administrasi kejuaraan"
+    },
+    "/attendance/{attendanceId}": {
+      "schema": { "$ref": "#/entities/Attendance" },
+      "description": "Presensi latihan atlet per sesi"
+    },
+    "/announcements/{announcementId}": {
+      "schema": { "$ref": "#/entities/Announcement" },
+      "description": "Surat administrasi, surat tugas lomba, dan pengumuman klub"
+    }
+  }
+}
