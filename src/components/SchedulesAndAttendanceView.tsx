@@ -26,10 +26,12 @@ import {
   AttendanceRecord,
   AttendanceStatus,
   ClubProfile,
+  Coach,
   DAYS_OF_WEEK,
   DayOfWeek,
   downloadCSV,
   formatDateID,
+  PoolFacility,
   ScheduleAgeGroup,
   ScheduleSessionType,
   SESSION_TYPES,
@@ -48,6 +50,7 @@ import {
   CheckCircle2,
   Clock,
   Edit3,
+  Filter,
   MapPin,
   Plus,
   Printer,
@@ -57,6 +60,7 @@ import {
 } from 'lucide-react';
 import { TrainingTrendChart } from './TrendCharts';
 import { ExportActionMenu } from './ExportActionMenu';
+import { BottomSheetSelect } from './BottomSheetSelect';
 
 interface SchedulesAndAttendanceViewProps {
   club: ClubProfile;
@@ -64,6 +68,8 @@ interface SchedulesAndAttendanceViewProps {
   schedules: TrainingSchedule[];
   athletes: Athlete[];
   attendance: AttendanceRecord[];
+  coaches?: Coach[];
+  pools?: PoolFacility[];
   onOpenPrintReport: () => void;
 }
 
@@ -73,6 +79,8 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
   schedules,
   athletes,
   attendance,
+  coaches = [],
+  pools = [],
   onOpenPrintReport,
 }) => {
   const [activeTab, setActiveTab] = useState<'schedules' | 'attendance'>('schedules');
@@ -111,6 +119,28 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
     DAYS_OF_WEEK.forEach((d, idx) => map.set(d, idx));
     return map;
   }, []);
+
+  const poolQuickPickOptions = useMemo(
+    () =>
+      pools.map((p) => ({
+        value: p.id,
+        label: p.name,
+        badge: `${p.laneCount} lintasan`,
+        description: `${p.poolType} · ${p.status}${p.address ? ` · ${p.address}` : ''}`,
+      })),
+    [pools]
+  );
+
+  const coachQuickPickOptions = useMemo(() => {
+    const active = coaches.filter((c) => c.status !== 'Nonaktif');
+    const source = active.length > 0 ? active : coaches;
+    return source.map((c) => ({
+      value: c.fullName,
+      label: c.fullName,
+      badge: c.role,
+      description: `${c.licenseLevel}${c.specialization ? ` · ${c.specialization}` : ''}`,
+    }));
+  }, [coaches]);
 
   const filteredSchedules = useMemo(() => {
     return [...schedules]
@@ -509,47 +539,46 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
         <>
           {/* Filter Bar */}
           <div className="bg-white border border-slate-200 rounded-xl p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5 sm:flex-wrap sm:overflow-visible">
-              <button
-                type="button"
-                onClick={() => setDayFilter('all')}
-                className={`px-3 min-h-[40px] sm:min-h-[32px] text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                  dayFilter === 'all'
-                    ? 'bg-slate-900 text-white'
-                    : 'bg-slate-100 text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Semua Hari
-              </button>
-              {DAYS_OF_WEEK.map((d) => (
-                <button
-                  key={d}
-                  type="button"
-                  onClick={() => setDayFilter(d)}
-                  className={`px-3 min-h-[40px] sm:min-h-[32px] text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                    dayFilter === d
-                      ? 'bg-slate-900 text-white'
-                      : 'bg-slate-100 text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  {d}
-                </button>
-              ))}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 flex-1 sm:max-w-lg">
+              <BottomSheetSelect
+                value={dayFilter}
+                onChange={setDayFilter}
+                title="Filter Hari Latihan"
+                subtitle="Tampilkan jadwal latihan berdasarkan hari rutin."
+                triggerPrefix="Hari:"
+                icon={<Calendar className="w-3.5 h-3.5" />}
+                resetValue="all"
+                resetLabel="Semua Hari"
+                options={[
+                  { value: 'all', label: 'Semua Hari', badge: `${schedules.length} sesi` },
+                  ...DAYS_OF_WEEK.map((d) => ({
+                    value: d,
+                    label: d,
+                    badge: `${schedules.filter((s) => s.dayOfWeek === d).length} sesi`,
+                  })),
+                ]}
+              />
+
+              <BottomSheetSelect
+                value={ageFilter}
+                onChange={setAgeFilter}
+                title="Filter Kelompok Umur"
+                subtitle="Pilih kelompok umur atau gabungan semua kelompok."
+                triggerPrefix="Kelompok:"
+                icon={<Filter className="w-3.5 h-3.5" />}
+                resetValue="all"
+                resetLabel="Semua"
+                options={[
+                  { value: 'all', label: 'Semua Kelompok' },
+                  { value: 'Semua Kelompok', label: 'Semua Kelompok (Gabungan)' },
+                  ...AGE_GROUPS.map((g) => ({ value: g, label: g })),
+                ]}
+              />
             </div>
 
-            <select
-              value={ageFilter}
-              onChange={(e) => setAgeFilter(e.target.value)}
-              className="w-full sm:w-auto px-3 min-h-[44px] sm:min-h-[36px] text-sm sm:text-xs border border-slate-200 rounded-lg bg-white text-slate-700"
-            >
-              <option value="all">Semua Kelompok</option>
-              <option value="Semua Kelompok">Semua Kelompok (Gabungan)</option>
-              {AGE_GROUPS.map((g) => (
-                <option key={g} value={g}>
-                  {g}
-                </option>
-              ))}
-            </select>
+            <span className="text-xs font-mono-tabular text-slate-500">
+              {filteredSchedules.length} jadwal ditampilkan
+            </span>
           </div>
 
           {listError && (
@@ -694,21 +723,23 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
             <>
               <div className="bg-white border border-slate-200 rounded-xl p-3.5 sm:p-4 flex flex-col md:flex-row md:items-center justify-between gap-3.5 sm:gap-4">
                 <div className="grid grid-cols-1 sm:flex sm:flex-wrap items-center gap-3 flex-1">
-                  <div className="sm:min-w-[240px] flex-1 sm:max-w-md">
+                  <div className="sm:min-w-[260px] flex-1 sm:max-w-md">
                     <label className="block text-xs font-medium text-slate-600 mb-1">
                       Pilih Sesi Latihan
                     </label>
-                    <select
+                    <BottomSheetSelect
                       value={activeSchedule?.id || ''}
-                      onChange={(e) => setSelectedScheduleId(e.target.value)}
-                      className="w-full px-3 min-h-[44px] sm:min-h-[36px] text-sm sm:text-xs border border-slate-200 rounded-lg bg-white text-slate-900"
-                    >
-                      {schedules.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.dayOfWeek} ({s.startTime}) — {s.title} [{s.ageGroup}]
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(val) => setSelectedScheduleId(val)}
+                      title="Pilih Sesi Latihan"
+                      subtitle="Pilih jadwal latihan untuk mencatat presensi atlet."
+                      searchable={schedules.length > 5}
+                      options={schedules.map((s) => ({
+                        value: s.id,
+                        label: `${s.dayOfWeek} · ${s.title}`,
+                        description: `${s.poolLocation} · ${s.coachName} · ${s.ageGroup}`,
+                        badge: `${s.startTime}–${s.endTime}`,
+                      }))}
+                    />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">
@@ -942,10 +973,10 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
                   <label className="block text-xs font-medium text-slate-700 mb-1">
                     Fokus Latihan
                   </label>
-                  <select
+                  <BottomSheetSelect
                     value={sessionType}
-                    onChange={(e) => {
-                      const nextType = e.target.value as ScheduleSessionType;
+                    onChange={(val) => {
+                      const nextType = val as ScheduleSessionType;
                       setSessionType(nextType);
                       if (nextType === 'Latihan Fisik (Dryland)' && targetDistance === '3000') {
                         setTargetDistance('0');
@@ -953,38 +984,28 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
                       clearFieldError('sessionType');
                       clearFieldError('targetDistance');
                     }}
-                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg bg-white ${
-                      fieldErrors.sessionType ? 'border-red-400' : 'border-slate-200'
-                    }`}
-                  >
-                    {SESSION_TYPES.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </select>
+                    title="Pilih Fokus Latihan"
+                    hasError={Boolean(fieldErrors.sessionType)}
+                    options={SESSION_TYPES.map((t) => ({ value: t, label: t }))}
+                  />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">
                     Kelompok Umur
                   </label>
-                  <select
+                  <BottomSheetSelect
                     value={ageGroup}
-                    onChange={(e) => {
-                      setAgeGroup(e.target.value as ScheduleAgeGroup);
+                    onChange={(val) => {
+                      setAgeGroup(val as ScheduleAgeGroup);
                       clearFieldError('ageGroup');
                     }}
-                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg bg-white ${
-                      fieldErrors.ageGroup ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
-                    }`}
-                  >
-                    <option value="Semua Kelompok">Semua Kelompok</option>
-                    {AGE_GROUPS.map((g) => (
-                      <option key={g} value={g}>
-                        {g}
-                      </option>
-                    ))}
-                  </select>
+                    title="Pilih Kelompok Umur"
+                    hasError={Boolean(fieldErrors.ageGroup)}
+                    options={[
+                      { value: 'Semua Kelompok', label: 'Semua Kelompok' },
+                      ...AGE_GROUPS.map((g) => ({ value: g, label: g })),
+                    ]}
+                  />
                   {fieldErrors.ageGroup && (
                     <p className="mt-1 text-xs text-red-600">{fieldErrors.ageGroup}</p>
                   )}
@@ -996,23 +1017,17 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
                   <label className="block text-xs font-medium text-slate-700 mb-1">
                     Hari Rutin <span className="text-red-500">*</span>
                   </label>
-                  <select
+                  <BottomSheetSelect
                     value={dayOfWeek}
-                    onChange={(e) => {
-                      setDayOfWeek(e.target.value as DayOfWeek);
+                    onChange={(val) => {
+                      setDayOfWeek(val as DayOfWeek);
                       clearFieldError('dayOfWeek');
                       clearFieldError('sessionDate');
                     }}
-                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg bg-white ${
-                      fieldErrors.dayOfWeek ? 'border-red-400' : 'border-slate-200'
-                    }`}
-                  >
-                    {DAYS_OF_WEEK.map((d) => (
-                      <option key={d} value={d}>
-                        {d}
-                      </option>
-                    ))}
-                  </select>
+                    title="Pilih Hari Rutin"
+                    hasError={Boolean(fieldErrors.dayOfWeek)}
+                    options={DAYS_OF_WEEK.map((d) => ({ value: d, label: d }))}
+                  />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">
@@ -1108,6 +1123,27 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
                       fieldErrors.poolLocation ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
                     }`}
                   />
+                  {poolQuickPickOptions.length > 0 && (
+                    <div className="mt-1.5">
+                      <BottomSheetSelect
+                        value={pools.find((p) => p.name === poolLocation)?.id || ''}
+                        onChange={(poolId) => {
+                          const picked = pools.find((p) => p.id === poolId);
+                          if (!picked) return;
+                          setPoolLocation(picked.name);
+                          if (!laneInfo.trim() || !editingSchedule) {
+                            setLaneInfo(`Lintasan 1–${Math.min(4, Math.max(1, picked.laneCount))}`);
+                          }
+                          clearFieldError('poolLocation');
+                          clearFieldError('laneInfo');
+                        }}
+                        title="Pilih Kolam Terdaftar"
+                        subtitle="Isi otomatis lokasi kolam dan informasi lintasan."
+                        placeholder="Pilih dari daftar kolam klub..."
+                        options={poolQuickPickOptions}
+                      />
+                    </div>
+                  )}
                   {fieldErrors.poolLocation && (
                     <p className="mt-1 text-xs text-red-600">{fieldErrors.poolLocation}</p>
                   )}
@@ -1152,6 +1188,23 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
                       fieldErrors.coachName ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
                     }`}
                   />
+                  {coachQuickPickOptions.length > 0 && (
+                    <div className="mt-1.5">
+                      <BottomSheetSelect
+                        value={
+                          coachQuickPickOptions.some((c) => c.value === coachName) ? coachName : ''
+                        }
+                        onChange={(val) => {
+                          setCoachName(val);
+                          clearFieldError('coachName');
+                        }}
+                        title="Pilih Pelatih Sesi"
+                        subtitle="Pilih dari daftar pelatih klub yang aktif."
+                        placeholder="Pilih dari daftar pelatih..."
+                        options={coachQuickPickOptions}
+                      />
+                    </div>
+                  )}
                   {fieldErrors.coachName && (
                     <p className="mt-1 text-xs text-red-600">{fieldErrors.coachName}</p>
                   )}

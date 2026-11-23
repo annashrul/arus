@@ -178,6 +178,86 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["clubId", "ownerId", "title", "docType", "content", "authorName", "createdAt", "updatedAt"]
+    },
+    "Coach": {
+      "title": "Coach",
+      "description": "Data pelatih, staf teknis, lisensi kepelatihan, dan honorarium bulanan",
+      "type": "object",
+      "properties": {
+        "clubId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "ownerId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "fullName": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "role": { "type": "string", "enum": ["Kepala Pelatih", "Pelatih Prestasi", "Pelatih Pemula", "Pelatih Fisik (Dryland)", "Admin & Medis"] },
+        "licenseLevel": { "type": "string", "enum": ["Nasional (PRSI A)", "Daerah (PRSI B)", "Dasar (PRSI C)", "Pelatih Fisik", "Non-Lisensi"] },
+        "specialization": { "type": "string", "maxLength": 100 },
+        "phone": { "type": "string", "maxLength": 25 },
+        "status": { "type": "string", "enum": ["Aktif", "Cuti", "Nonaktif"] },
+        "monthlyHonorarium": { "type": "number" },
+        "joinDate": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$", "maxLength": 10 },
+        "notes": { "type": "string", "maxLength": 300 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["clubId", "ownerId", "fullName", "role", "licenseLevel", "status", "monthlyHonorarium", "joinDate", "createdAt", "updatedAt"]
+    },
+    "PoolFacility": {
+      "title": "PoolFacility",
+      "description": "Data kolam renang, jumlah lintasan, dan biaya sewa fasilitas latihan",
+      "type": "object",
+      "properties": {
+        "clubId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "ownerId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "name": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "poolType": { "type": "string", "enum": ["50m (Olympic/LCM)", "25m (Short Course)", "Kolam Pemanasan", "Area Dryland"] },
+        "laneCount": { "type": "number" },
+        "address": { "type": "string", "maxLength": 160 },
+        "rentalCostPerSession": { "type": "number" },
+        "status": { "type": "string", "enum": ["Tersedia", "Renovasi", "Tidak Aktif"] },
+        "notes": { "type": "string", "maxLength": 300 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["clubId", "ownerId", "name", "poolType", "laneCount", "rentalCostPerSession", "status", "createdAt", "updatedAt"]
+    },
+    "EquipmentItem": {
+      "title": "EquipmentItem",
+      "description": "Inventaris alat latihan renang, stopwatch lomba, P3K, dan perlengkapan klub",
+      "type": "object",
+      "properties": {
+        "clubId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "ownerId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "itemName": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "category": { "type": "string", "enum": ["Alat Teknik Renang", "Timing & Lomba", "Dryland & Kebugaran", "Keselamatan & P3K", "Atribut & Seragam"] },
+        "quantity": { "type": "number" },
+        "condition": { "type": "string", "enum": ["Baik", "Perlu Perbaikan", "Rusak"] },
+        "location": { "type": "string", "maxLength": 100 },
+        "lastCheckedDate": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$", "maxLength": 10 },
+        "notes": { "type": "string", "maxLength": 300 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["clubId", "ownerId", "itemName", "category", "quantity", "condition", "lastCheckedDate", "createdAt", "updatedAt"]
+    },
+    "Competition": {
+      "title": "Competition",
+      "description": "Kalender target kejuaraan renang, biaya pendaftaran, dan status keikutsertaan",
+      "type": "object",
+      "properties": {
+        "clubId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "ownerId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "name": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "level": { "type": "string", "enum": ["Klub / Time Trial", "Kota / Kabupaten", "Provinsi (Kejurda)", "Nasional (Kejurnas)", "Internasional"] },
+        "startDate": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$", "maxLength": 10 },
+        "endDate": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$", "maxLength": 10 },
+        "location": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "poolCourse": { "type": "string", "enum": ["50m (LCM)", "25m (SCM)"] },
+        "registrationFee": { "type": "number" },
+        "status": { "type": "string", "enum": ["Akan Datang", "Pendaftaran Dibuka", "Berlangsung", "Selesai", "Dibatalkan"] },
+        "notes": { "type": "string", "maxLength": 300 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["clubId", "ownerId", "name", "level", "startDate", "endDate", "location", "poolCourse", "registrationFee", "status", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
@@ -212,6 +292,22 @@
     "/announcements/{announcementId}": {
       "schema": { "$ref": "#/entities/Announcement" },
       "description": "Surat administrasi, surat tugas lomba, dan pengumuman klub"
+    },
+    "/coaches/{coachId}": {
+      "schema": { "$ref": "#/entities/Coach" },
+      "description": "Daftar pelatih, staf teknis, lisensi, dan honorarium klub"
+    },
+    "/pools/{poolId}": {
+      "schema": { "$ref": "#/entities/PoolFacility" },
+      "description": "Daftar kolam renang dan fasilitas latihan klub"
+    },
+    "/equipment/{equipmentId}": {
+      "schema": { "$ref": "#/entities/EquipmentItem" },
+      "description": "Inventaris perlengkapan renang, timing lomba, dan keselamatan"
+    },
+    "/competitions/{competitionId}": {
+      "schema": { "$ref": "#/entities/Competition" },
+      "description": "Kalender target kejuaraan dan agenda lomba klub"
     }
   }
 }

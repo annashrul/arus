@@ -51,6 +51,53 @@ export type AnnouncementDocType =
   | 'Undangan Rapat'
   | 'Peraturan Kolam';
 
+export type CoachRole =
+  | 'Kepala Pelatih'
+  | 'Pelatih Prestasi'
+  | 'Pelatih Pemula'
+  | 'Pelatih Fisik (Dryland)'
+  | 'Admin & Medis';
+
+export type CoachLicense =
+  | 'Nasional (PRSI A)'
+  | 'Daerah (PRSI B)'
+  | 'Dasar (PRSI C)'
+  | 'Pelatih Fisik'
+  | 'Non-Lisensi';
+
+export type CoachStatus = 'Aktif' | 'Cuti' | 'Nonaktif';
+
+export type PoolType =
+  | '50m (Olympic/LCM)'
+  | '25m (Short Course)'
+  | 'Kolam Pemanasan'
+  | 'Area Dryland';
+
+export type PoolStatus = 'Tersedia' | 'Renovasi' | 'Tidak Aktif';
+
+export type EquipmentCategory =
+  | 'Alat Teknik Renang'
+  | 'Timing & Lomba'
+  | 'Dryland & Kebugaran'
+  | 'Keselamatan & P3K'
+  | 'Atribut & Seragam';
+
+export type EquipmentCondition = 'Baik' | 'Perlu Perbaikan' | 'Rusak';
+
+export type CompetitionLevel =
+  | 'Klub / Time Trial'
+  | 'Kota / Kabupaten'
+  | 'Provinsi (Kejurda)'
+  | 'Nasional (Kejurnas)'
+  | 'Internasional';
+
+export type CompetitionStatus =
+  | 'Akan Datang'
+  | 'Pendaftaran Dibuka'
+  | 'Berlangsung'
+  | 'Selesai'
+  | 'Dibatalkan';
+
 export interface ClubProfile {
   id: string;
   name: string;
@@ -198,6 +245,70 @@ export interface ClubAnnouncement {
   updatedAt?: unknown;
 }
 
+export interface Coach {
+  id: string;
+  clubId: string;
+  ownerId: string;
+  fullName: string;
+  role: CoachRole;
+  licenseLevel: CoachLicense;
+  specialization?: string;
+  phone?: string;
+  status: CoachStatus;
+  monthlyHonorarium: number;
+  joinDate: string;
+  notes?: string;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+export interface PoolFacility {
+  id: string;
+  clubId: string;
+  ownerId: string;
+  name: string;
+  poolType: PoolType;
+  laneCount: number;
+  address?: string;
+  rentalCostPerSession: number;
+  status: PoolStatus;
+  notes?: string;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+export interface EquipmentItem {
+  id: string;
+  clubId: string;
+  ownerId: string;
+  itemName: string;
+  category: EquipmentCategory;
+  quantity: number;
+  condition: EquipmentCondition;
+  location?: string;
+  lastCheckedDate: string;
+  notes?: string;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+export interface ClubCompetition {
+  id: string;
+  clubId: string;
+  ownerId: string;
+  name: string;
+  level: CompetitionLevel;
+  startDate: string;
+  endDate: string;
+  location: string;
+  poolCourse: PoolCourse;
+  registrationFee: number;
+  status: CompetitionStatus;
+  notes?: string;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
 export const AGE_GROUPS: AgeGroup[] = ['Pemula', 'KU V', 'KU IV', 'KU III', 'KU II', 'KU I', 'Senior'];
 export const SWIM_STROKES: SwimStroke[] = [
   'Gaya Bebas',
@@ -243,6 +354,50 @@ export const ANNOUNCEMENT_TYPES: AnnouncementDocType[] = [
   'Surat Tugas Lomba',
   'Undangan Rapat',
   'Peraturan Kolam',
+];
+export const COACH_ROLES: CoachRole[] = [
+  'Kepala Pelatih',
+  'Pelatih Prestasi',
+  'Pelatih Pemula',
+  'Pelatih Fisik (Dryland)',
+  'Admin & Medis',
+];
+export const COACH_LICENSES: CoachLicense[] = [
+  'Nasional (PRSI A)',
+  'Daerah (PRSI B)',
+  'Dasar (PRSI C)',
+  'Pelatih Fisik',
+  'Non-Lisensi',
+];
+export const COACH_STATUSES: CoachStatus[] = ['Aktif', 'Cuti', 'Nonaktif'];
+export const POOL_TYPES: PoolType[] = [
+  '50m (Olympic/LCM)',
+  '25m (Short Course)',
+  'Kolam Pemanasan',
+  'Area Dryland',
+];
+export const POOL_STATUSES: PoolStatus[] = ['Tersedia', 'Renovasi', 'Tidak Aktif'];
+export const EQUIPMENT_CATEGORIES: EquipmentCategory[] = [
+  'Alat Teknik Renang',
+  'Timing & Lomba',
+  'Dryland & Kebugaran',
+  'Keselamatan & P3K',
+  'Atribut & Seragam',
+];
+export const EQUIPMENT_CONDITIONS: EquipmentCondition[] = ['Baik', 'Perlu Perbaikan', 'Rusak'];
+export const COMPETITION_LEVELS: CompetitionLevel[] = [
+  'Klub / Time Trial',
+  'Kota / Kabupaten',
+  'Provinsi (Kejurda)',
+  'Nasional (Kejurnas)',
+  'Internasional',
+];
+export const COMPETITION_STATUSES: CompetitionStatus[] = [
+  'Akan Datang',
+  'Pendaftaran Dibuka',
+  'Berlangsung',
+  'Selesai',
+  'Dibatalkan',
 ];
 
 export function formatRupiah(amount: number): string {

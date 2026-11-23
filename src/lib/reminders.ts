@@ -1,9 +1,11 @@
 import {
   AttendanceRecord,
   ClubAnnouncement,
+  ClubCompetition,
   ClubInvoice,
   ClubProfile,
   DayOfWeek,
+  EquipmentItem,
   formatDateID,
   formatRupiah,
   todayISO,
@@ -12,7 +14,13 @@ import {
 import { getDayOfWeekFromDate } from './validation';
 import { NavSection } from '../components/OverviewView';
 
-export type ReminderCategory = 'invoice' | 'schedule' | 'attendance' | 'announcement';
+export type ReminderCategory =
+  | 'invoice'
+  | 'schedule'
+  | 'attendance'
+  | 'announcement'
+  | 'competition'
+  | 'equipment';
 export type ReminderSeverity = 'urgent' | 'warning' | 'info';
 
 export interface ClubReminder {
@@ -82,6 +90,8 @@ export function computeClubReminders(params: {
   schedules: TrainingSchedule[];
   attendance: AttendanceRecord[];
   announcements: ClubAnnouncement[];
+  competitions?: ClubCompetition[];
+  equipment?: EquipmentItem[];
   today?: string;
 }): ClubReminder[] {
   const today = params.today || todayISO();
@@ -197,6 +207,43 @@ export function computeClubReminders(params: {
         meta: `Tanggal ${formatDateID(ann.eventDate)} · Oleh ${ann.authorName}`,
         targetNav: 'invoices',
         actionLabel: 'Lihat Surat',
+      });
+    }
+  }
+
+  // 5. Upcoming target competitions (within 0..14 days)
+  for (const comp of params.competitions || []) {
+    if (comp.status === 'Selesai' || comp.status === 'Dibatalkan') continue;
+    const diff = diffDaysFromToday(comp.startDate, today);
+    if (diff !== null && diff >= 0 && diff <= 14) {
+      items.push({
+        id: `comp-soon-${comp.id}`,
+        category: 'competition',
+        severity: diff <= 3 ? 'warning' : 'info',
+        title:
+          diff === 0
+            ? `Hari H Kejuaraan: ${comp.name}`
+            : `Kejuaraan H-${diff}: ${comp.name}`,
+        description: `${comp.level} · ${comp.location} (${comp.poolCourse})`,
+        meta: `Mulai ${formatDateID(comp.startDate)} · Status: ${comp.status}`,
+        targetNav: 'clubops',
+        actionLabel: 'Lihat Kalender',
+      });
+    }
+  }
+
+  // 6. Equipment needing repair / replacement
+  for (const eq of params.equipment || []) {
+    if (eq.condition === 'Rusak' || eq.condition === 'Perlu Perbaikan') {
+      items.push({
+        id: `eq-cond-${eq.id}`,
+        category: 'equipment',
+        severity: eq.condition === 'Rusak' ? 'warning' : 'info',
+        title: `Inventaris ${eq.condition}: ${eq.itemName}`,
+        description: `${eq.quantity} unit · Kategori ${eq.category}`,
+        meta: `Lokasi: ${eq.location || '-'} · Dicek ${formatDateID(eq.lastCheckedDate)}`,
+        targetNav: 'clubops',
+        actionLabel: 'Cek Inventaris',
       });
     }
   }

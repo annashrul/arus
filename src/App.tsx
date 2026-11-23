@@ -16,20 +16,26 @@ import { FinanceView } from './components/FinanceView';
 import { AthletesAndTimesView } from './components/AthletesAndTimesView';
 import { SchedulesAndAttendanceView } from './components/SchedulesAndAttendanceView';
 import { InvoicesAndAdminView } from './components/InvoicesAndAdminView';
+import { ClubOperationsView } from './components/ClubOperationsView';
 import { RemindersDrawer } from './components/RemindersDrawer';
 import { PrintReportKind, PrintReportModal } from './components/PrintReportModal';
 import {
   Athlete,
   AttendanceRecord,
   ClubAnnouncement,
+  ClubCompetition,
   ClubInvoice,
   ClubProfile,
+  Coach,
+  EquipmentItem,
   FinanceTransaction,
+  PoolFacility,
   SwimTime,
   TrainingSchedule,
 } from './types/club';
 import {
   Bell,
+  Briefcase,
   CalendarDays,
   LayoutDashboard,
   Loader2,
@@ -48,6 +54,7 @@ const NAV_ITEMS: { id: NavSection; label: string; icon: React.ComponentType<{ cl
   { id: 'athletes', label: 'Atlet & Waktu', icon: Users },
   { id: 'schedules', label: 'Jadwal & Presensi', icon: CalendarDays },
   { id: 'invoices', label: 'Invoice & Adm', icon: Receipt },
+  { id: 'clubops', label: 'Pelatih & Klub', icon: Briefcase },
 ];
 
 function SwimmingClubWorkspace() {
@@ -65,6 +72,10 @@ function SwimmingClubWorkspace() {
   const [invoices, setInvoices] = useState<ClubInvoice[]>([]);
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [announcements, setAnnouncements] = useState<ClubAnnouncement[]>([]);
+  const [coaches, setCoaches] = useState<Coach[]>([]);
+  const [pools, setPools] = useState<PoolFacility[]>([]);
+  const [equipment, setEquipment] = useState<EquipmentItem[]>([]);
+  const [competitions, setCompetitions] = useState<ClubCompetition[]>([]);
 
   const [activeNav, setActiveNav] = useState<NavSection>('overview');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -120,6 +131,10 @@ function SwimmingClubWorkspace() {
       setInvoices([]);
       setAttendance([]);
       setAnnouncements([]);
+      setCoaches([]);
+      setPools([]);
+      setEquipment([]);
+      setCompetitions([]);
       return;
     }
 
@@ -190,6 +205,42 @@ function SwimmingClubWorkspace() {
       (err) => handleFirestoreError(err, OperationType.LIST, 'announcements')
     );
 
+    const unsubCoaches = onSnapshot(
+      query(collection(db, 'coaches'), where('ownerId', '==', uid), where('clubId', '==', cid)),
+      (snap) => {
+        setCoaches(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Coach, 'id'>) })));
+      },
+      (err) => handleFirestoreError(err, OperationType.LIST, 'coaches')
+    );
+
+    const unsubPools = onSnapshot(
+      query(collection(db, 'pools'), where('ownerId', '==', uid), where('clubId', '==', cid)),
+      (snap) => {
+        setPools(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<PoolFacility, 'id'>) })));
+      },
+      (err) => handleFirestoreError(err, OperationType.LIST, 'pools')
+    );
+
+    const unsubEquipment = onSnapshot(
+      query(collection(db, 'equipment'), where('ownerId', '==', uid), where('clubId', '==', cid)),
+      (snap) => {
+        setEquipment(
+          snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<EquipmentItem, 'id'>) }))
+        );
+      },
+      (err) => handleFirestoreError(err, OperationType.LIST, 'equipment')
+    );
+
+    const unsubCompetitions = onSnapshot(
+      query(collection(db, 'competitions'), where('ownerId', '==', uid), where('clubId', '==', cid)),
+      (snap) => {
+        setCompetitions(
+          snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<ClubCompetition, 'id'>) }))
+        );
+      },
+      (err) => handleFirestoreError(err, OperationType.LIST, 'competitions')
+    );
+
     return () => {
       unsubAthletes();
       unsubSwimTimes();
@@ -198,6 +249,10 @@ function SwimmingClubWorkspace() {
       unsubInvoices();
       unsubAttendance();
       unsubAnnouncements();
+      unsubCoaches();
+      unsubPools();
+      unsubEquipment();
+      unsubCompetitions();
     };
   }, [authReady, user, activeClub]);
 
@@ -217,8 +272,10 @@ function SwimmingClubWorkspace() {
       schedules,
       attendance,
       announcements,
+      competitions,
+      equipment,
     });
-  }, [activeClub, invoices, schedules, attendance, announcements]);
+  }, [activeClub, invoices, schedules, attendance, announcements, competitions, equipment]);
 
   const activeReminders = useMemo(
     () => allReminders.filter((r) => !dismissedReminderIds.includes(r.id)),
@@ -258,11 +315,12 @@ function SwimmingClubWorkspace() {
   const currentNavLabel = NAV_ITEMS.find((n) => n.id === activeNav)?.label || 'Ringkasan';
 
   const MOBILE_NAV_LABELS: Record<NavSection, string> = {
-    overview: 'Ringkasan',
+    overview: 'Ringkas',
     finance: 'Kas',
     athletes: 'Atlet',
     schedules: 'Jadwal',
-    invoices: 'Invoice',
+    invoices: 'Tagihan',
+    clubops: 'Klub',
   };
 
   const defaultReportForNav: Record<NavSection, PrintReportKind> = {
@@ -271,6 +329,7 @@ function SwimmingClubWorkspace() {
     athletes: 'athletes',
     schedules: 'schedules',
     invoices: 'invoices',
+    clubops: 'clubops',
   };
 
   return (
@@ -475,6 +534,10 @@ function SwimmingClubWorkspace() {
               attendance={attendance}
               invoices={invoices}
               announcements={announcements}
+              coaches={coaches}
+              pools={pools}
+              equipment={equipment}
+              competitions={competitions}
               reminders={activeReminders}
               onOpenReminders={() => setRemindersOpen(true)}
               onOpenPrintReport={(kind) => setPrintReportKind(kind)}
@@ -501,6 +564,7 @@ function SwimmingClubWorkspace() {
               athletes={athletes}
               swimTimes={swimTimes}
               invoices={invoices}
+              coaches={coaches}
               onOpenPrintReport={() => setPrintReportKind('athletes')}
             />
           )}
@@ -512,6 +576,8 @@ function SwimmingClubWorkspace() {
               schedules={schedules}
               athletes={athletes}
               attendance={attendance}
+              coaches={coaches}
+              pools={pools}
               onOpenPrintReport={() => setPrintReportKind('schedules')}
             />
           )}
@@ -526,6 +592,18 @@ function SwimmingClubWorkspace() {
               onOpenPrintReport={() => setPrintReportKind('invoices')}
             />
           )}
+
+          {activeNav === 'clubops' && (
+            <ClubOperationsView
+              club={activeClub}
+              userId={user.uid}
+              coaches={coaches}
+              pools={pools}
+              equipment={equipment}
+              competitions={competitions}
+              onOpenPrint={() => setPrintReportKind('clubops')}
+            />
+          )}
         </main>
       </div>
 
@@ -534,7 +612,7 @@ function SwimmingClubWorkspace() {
         aria-label="Navigasi utama mobile"
         className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-slate-200 pb-safe no-print"
       >
-        <div className="grid grid-cols-5 h-16 max-w-xl mx-auto">
+        <div className="grid grid-cols-6 h-16 max-w-xl mx-auto">
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
             const active = activeNav === item.id;
@@ -580,6 +658,10 @@ function SwimmingClubWorkspace() {
       schedules={schedules}
       attendance={attendance}
       invoices={invoices}
+      coaches={coaches}
+      pools={pools}
+      equipment={equipment}
+      competitions={competitions}
     />
     </>
   );

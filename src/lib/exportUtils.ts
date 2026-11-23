@@ -2,12 +2,16 @@ import {
   Athlete,
   AttendanceRecord,
   ClubAnnouncement,
+  ClubCompetition,
   ClubInvoice,
   ClubProfile,
+  Coach,
   DAYS_OF_WEEK,
+  EquipmentItem,
   FinanceTransaction,
   formatDateID,
   formatRupiah,
+  PoolFacility,
   SwimTime,
   todayISO,
   TrainingSchedule,
@@ -150,6 +154,10 @@ export function downloadJSONBackup(
     attendance: AttendanceRecord[];
     invoices: ClubInvoice[];
     announcements: ClubAnnouncement[];
+    coaches?: Coach[];
+    pools?: PoolFacility[];
+    equipment?: EquipmentItem[];
+    competitions?: ClubCompetition[];
   }
 ): void {
   const payload = {
@@ -175,6 +183,10 @@ export function downloadJSONBackup(
       attendance: data.attendance.length,
       invoices: data.invoices.length,
       announcements: data.announcements.length,
+      coaches: data.coaches?.length ?? 0,
+      pools: data.pools?.length ?? 0,
+      equipment: data.equipment?.length ?? 0,
+      competitions: data.competitions?.length ?? 0,
     },
     records: data,
   };
@@ -439,6 +451,110 @@ export function buildInvoicesSheet(invoices: ClubInvoice[]): ExcelSheet {
   };
 }
 
+export function buildCoachesSheet(coaches: Coach[]): ExcelSheet {
+  return {
+    name: 'Pelatih & Staf',
+    headers: [
+      'Nama Lengkap',
+      'Peran',
+      'Lisensi',
+      'Spesialisasi',
+      'Telepon',
+      'Status',
+      'Honorarium/Bln (IDR)',
+      'Tanggal Gabung',
+      'Catatan',
+    ],
+    rows: coaches.map((c) => [
+      c.fullName,
+      c.role,
+      c.licenseLevel,
+      c.specialization || '-',
+      c.phone || '-',
+      c.status,
+      { value: c.monthlyHonorarium, type: 'Number', styleId: 'Currency' },
+      c.joinDate,
+      c.notes || '-',
+    ]),
+  };
+}
+
+export function buildPoolsSheet(pools: PoolFacility[]): ExcelSheet {
+  return {
+    name: 'Kolam & Fasilitas',
+    headers: [
+      'Nama Kolam / Fasilitas',
+      'Tipe',
+      'Jumlah Lintasan',
+      'Alamat',
+      'Biaya Sewa/Sesi (IDR)',
+      'Status',
+      'Catatan',
+    ],
+    rows: pools.map((p) => [
+      p.name,
+      p.poolType,
+      { value: p.laneCount, type: 'Number' },
+      p.address || '-',
+      { value: p.rentalCostPerSession, type: 'Number', styleId: 'Currency' },
+      p.status,
+      p.notes || '-',
+    ]),
+  };
+}
+
+export function buildEquipmentSheet(equipment: EquipmentItem[]): ExcelSheet {
+  return {
+    name: 'Perlengkapan Klub',
+    headers: [
+      'Nama Barang',
+      'Kategori',
+      'Jumlah (Unit)',
+      'Kondisi',
+      'Lokasi Penyimpanan',
+      'Pengecekan Terakhir',
+      'Catatan',
+    ],
+    rows: equipment.map((e) => [
+      e.itemName,
+      e.category,
+      { value: e.quantity, type: 'Number' },
+      e.condition,
+      e.location || '-',
+      e.lastCheckedDate,
+      e.notes || '-',
+    ]),
+  };
+}
+
+export function buildCompetitionsSheet(competitions: ClubCompetition[]): ExcelSheet {
+  return {
+    name: 'Kalender Kejuaraan',
+    headers: [
+      'Nama Kejuaraan',
+      'Tingkat',
+      'Tanggal Mulai',
+      'Tanggal Selesai',
+      'Lokasi',
+      'Kolam',
+      'Biaya Registrasi (IDR)',
+      'Status',
+      'Catatan',
+    ],
+    rows: competitions.map((comp) => [
+      comp.name,
+      comp.level,
+      comp.startDate,
+      comp.endDate,
+      comp.location,
+      comp.poolCourse,
+      { value: comp.registrationFee, type: 'Number', styleId: 'Currency' },
+      comp.status,
+      comp.notes || '-',
+    ]),
+  };
+}
+
 export function downloadFullClubExcel(
   club: ClubProfile,
   data: {
@@ -448,6 +564,10 @@ export function downloadFullClubExcel(
     schedules: TrainingSchedule[];
     attendance: AttendanceRecord[];
     invoices: ClubInvoice[];
+    coaches?: Coach[];
+    pools?: PoolFacility[];
+    equipment?: EquipmentItem[];
+    competitions?: ClubCompetition[];
   }
 ): void {
   let income = 0;
@@ -469,6 +589,9 @@ export function downloadFullClubExcel(
       ['Tanggal Ekspor', formatDateID(todayISO())],
       ['Total Atlet Terdaftar', { value: data.athletes.length, type: 'Number' }],
       ['Atlet Berstatus Aktif', { value: data.athletes.filter((a) => a.status === 'Aktif').length, type: 'Number' }],
+      ['Pelatih & Staf Terdaftar', { value: data.coaches?.length ?? 0, type: 'Number' }],
+      ['Fasilitas Kolam', { value: data.pools?.length ?? 0, type: 'Number' }],
+      ['Target Kejuaraan', { value: data.competitions?.length ?? 0, type: 'Number' }],
       ['Catatan Waktu PB', { value: data.swimTimes.filter((s) => s.isPersonalBest).length, type: 'Number' }],
       ['Total Pemasukan Kas', formatRupiah(income)],
       ['Total Pengeluaran Kas', formatRupiah(expense)],
@@ -478,7 +601,7 @@ export function downloadFullClubExcel(
     ],
   };
 
-  downloadExcelWorkbook(`laporan-lengkap-${slugifyClub(club.name)}-${todayISO()}.xls`, [
+  const sheets: ExcelSheet[] = [
     summarySheet,
     buildFinanceSheet(data.transactions),
     buildAthletesSheet(data.athletes),
@@ -486,5 +609,12 @@ export function downloadFullClubExcel(
     buildSchedulesSheet(data.schedules),
     buildAttendanceSheet(data.attendance),
     buildInvoicesSheet(data.invoices),
-  ]);
+  ];
+
+  if (data.coaches && data.coaches.length > 0) sheets.push(buildCoachesSheet(data.coaches));
+  if (data.pools && data.pools.length > 0) sheets.push(buildPoolsSheet(data.pools));
+  if (data.equipment && data.equipment.length > 0) sheets.push(buildEquipmentSheet(data.equipment));
+  if (data.competitions && data.competitions.length > 0) sheets.push(buildCompetitionsSheet(data.competitions));
+
+  downloadExcelWorkbook(`laporan-lengkap-${slugifyClub(club.name)}-${todayISO()}.xls`, sheets);
 }

@@ -2,12 +2,16 @@ import React, { useMemo, useState } from 'react';
 import {
   Athlete,
   AttendanceRecord,
+  ClubCompetition,
   ClubInvoice,
   ClubProfile,
+  Coach,
   DAYS_OF_WEEK,
+  EquipmentItem,
   FinanceTransaction,
   formatDateID,
   formatRupiah,
+  PoolFacility,
   SwimTime,
   todayISO,
   TrainingSchedule,
@@ -15,21 +19,27 @@ import {
 import {
   buildAthletesSheet,
   buildAttendanceSheet,
+  buildCoachesSheet,
+  buildCompetitionsSheet,
+  buildEquipmentSheet,
   buildFinanceSheet,
   buildInvoicesSheet,
+  buildPoolsSheet,
   buildSchedulesSheet,
   buildSwimTimesSheet,
   downloadExcelWorkbook,
   downloadFullClubExcel,
 } from '../lib/exportUtils';
-import { FileSpreadsheet, Printer, X } from 'lucide-react';
+import { Calendar, FileSpreadsheet, Printer, SlidersHorizontal, X } from 'lucide-react';
+import { BottomSheetSelect } from './BottomSheetSelect';
 
 export type PrintReportKind =
   | 'executive'
   | 'finance'
   | 'athletes'
   | 'schedules'
-  | 'invoices';
+  | 'invoices'
+  | 'clubops';
 
 type PeriodScope = 'all' | 'this_month' | 'last_3_months' | 'this_year';
 
@@ -44,6 +54,10 @@ interface PrintReportModalProps {
   schedules: TrainingSchedule[];
   attendance: AttendanceRecord[];
   invoices: ClubInvoice[];
+  coaches?: Coach[];
+  pools?: PoolFacility[];
+  equipment?: EquipmentItem[];
+  competitions?: ClubCompetition[];
 }
 
 function getScopeStartDate(scope: PeriodScope, today: string): string | null {
@@ -69,6 +83,10 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
   schedules,
   attendance,
   invoices,
+  coaches = [],
+  pools = [],
+  equipment = [],
+  competitions = [],
 }) => {
   const [reportKind, setReportKind] = useState<PrintReportKind>(initialReport);
   const [periodScope, setPeriodScope] = useState<PeriodScope>('all');
@@ -183,6 +201,7 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
     athletes: 'Laporan Database Atlet & Catatan Waktu Kejuaraan',
     schedules: 'Laporan Jadwal Latihan & Rekap Presensi',
     invoices: 'Laporan Rekap Tagihan & Tunggakan SPP',
+    clubops: 'Laporan Pelatih, Fasilitas Kolam, Inventaris & Lomba',
   };
 
   const handleExportReportExcel = () => {
@@ -195,6 +214,10 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
         schedules: sortedSchedules,
         attendance: scopedAttendance,
         invoices: scopedInvoices,
+        coaches,
+        pools,
+        equipment,
+        competitions,
       });
     } else if (reportKind === 'finance') {
       downloadExcelWorkbook(`laporan-kas-${slug}-${today}.xls`, [
@@ -209,6 +232,13 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
       downloadExcelWorkbook(`laporan-jadwal-presensi-${slug}-${today}.xls`, [
         buildSchedulesSheet(sortedSchedules),
         buildAttendanceSheet(scopedAttendance),
+      ]);
+    } else if (reportKind === 'clubops') {
+      downloadExcelWorkbook(`laporan-pelatih-fasilitas-${slug}-${today}.xls`, [
+        buildCoachesSheet(coaches),
+        buildPoolsSheet(pools),
+        buildEquipmentSheet(equipment),
+        buildCompetitionsSheet(competitions),
       ]);
     } else {
       downloadExcelWorkbook(`laporan-tagihan-${slug}-${today}.xls`, [
@@ -271,6 +301,7 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
                   { id: 'athletes', label: 'Atlet & Waktu' },
                   { id: 'schedules', label: 'Jadwal & Presensi' },
                   { id: 'invoices', label: 'Tagihan SPP' },
+                  { id: 'clubops', label: 'Pelatih & Klub' },
                 ] as const
               ).map((tab) => (
                 <button
@@ -289,27 +320,35 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
             </div>
 
             <div className="flex flex-wrap items-center gap-2 text-xs">
-              <select
-                value={periodScope}
-                onChange={(e) => setPeriodScope(e.target.value as PeriodScope)}
-                aria-label="Periode laporan"
-                className="px-2.5 min-h-[36px] text-xs border border-slate-200 rounded-lg bg-white text-slate-700"
-              >
-                <option value="all">Semua Periode</option>
-                <option value="this_month">Bulan Ini</option>
-                <option value="last_3_months">3 Bulan Terakhir</option>
-                <option value="this_year">Tahun Ini</option>
-              </select>
+              <div className="w-40">
+                <BottomSheetSelect
+                  value={periodScope}
+                  onChange={(v) => setPeriodScope(v as PeriodScope)}
+                  title="Pilih Periode Laporan"
+                  icon={<Calendar className="w-3.5 h-3.5" />}
+                  ariaLabel="Periode laporan"
+                  options={[
+                    { value: 'all', label: 'Semua Periode' },
+                    { value: 'this_month', label: 'Bulan Ini' },
+                    { value: 'last_3_months', label: '3 Bulan Terakhir' },
+                    { value: 'this_year', label: 'Tahun Ini' },
+                  ]}
+                />
+              </div>
 
-              <select
-                value={orientation}
-                onChange={(e) => setOrientation(e.target.value as 'portrait' | 'landscape')}
-                aria-label="Orientasi halaman"
-                className="px-2.5 min-h-[36px] text-xs border border-slate-200 rounded-lg bg-white text-slate-700"
-              >
-                <option value="portrait">A4 Portrait</option>
-                <option value="landscape">A4 Landscape</option>
-              </select>
+              <div className="w-36">
+                <BottomSheetSelect
+                  value={orientation}
+                  onChange={(v) => setOrientation(v as 'portrait' | 'landscape')}
+                  title="Orientasi Kertas A4"
+                  icon={<SlidersHorizontal className="w-3.5 h-3.5" />}
+                  ariaLabel="Orientasi halaman"
+                  options={[
+                    { value: 'portrait', label: 'A4 Portrait', description: 'Vertikal standar surat resmi' },
+                    { value: 'landscape', label: 'A4 Landscape', description: 'Mendatar untuk tabel lebar' },
+                  ]}
+                />
+              </div>
 
               <label className="inline-flex items-center gap-1.5 px-2.5 min-h-[36px] border border-slate-200 rounded-lg cursor-pointer bg-white text-slate-700">
                 <input
@@ -803,6 +842,94 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
                         <td className="py-2 px-2.5 text-right font-mono-tabular font-semibold">
                           {formatRupiah(inv.amount)}
                         </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* REPORT SECTION: CLUBOPS */}
+          {reportKind === 'clubops' && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="border border-slate-200 rounded-lg p-3">
+                  <div className="text-[11px] text-slate-500">Pelatih Aktif</div>
+                  <div className="font-mono-tabular text-sm sm:text-base font-bold text-slate-900 mt-1">
+                    {coaches.filter((c) => c.status === 'Aktif').length} / {coaches.length}
+                  </div>
+                </div>
+                <div className="border border-slate-200 rounded-lg p-3">
+                  <div className="text-[11px] text-slate-500">Fasilitas Kolam</div>
+                  <div className="font-mono-tabular text-sm sm:text-base font-bold text-slate-900 mt-1">
+                    {pools.length} lokasi
+                  </div>
+                </div>
+                <div className="border border-slate-200 rounded-lg p-3">
+                  <div className="text-[11px] text-slate-500">Perlengkapan</div>
+                  <div className="font-mono-tabular text-sm sm:text-base font-bold text-slate-900 mt-1">
+                    {equipment.reduce((acc, e) => acc + e.quantity, 0)} unit
+                  </div>
+                </div>
+                <div className="border border-slate-200 rounded-lg p-3">
+                  <div className="text-[11px] text-slate-500">Agenda Kejuaraan</div>
+                  <div className="font-mono-tabular text-sm sm:text-base font-bold text-sky-800 mt-1">
+                    {competitions.length} lomba
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="font-display text-sm font-bold text-slate-900 mb-2">
+                  Daftar Pelatih & Staf ({coaches.length})
+                </h3>
+                <table className="w-full text-left border-collapse text-xs border border-slate-200">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-600">
+                      <th className="py-2 px-2.5">Nama</th>
+                      <th className="py-2 px-2.5">Peran & Lisensi</th>
+                      <th className="py-2 px-2.5">Status</th>
+                      <th className="py-2 px-2.5 text-right">Honorarium/Bln</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {coaches.map((c) => (
+                      <tr key={c.id}>
+                        <td className="py-2 px-2.5 font-medium text-slate-900">{c.fullName}</td>
+                        <td className="py-2 px-2.5">{c.role} · {c.licenseLevel}</td>
+                        <td className="py-2 px-2.5">{c.status}</td>
+                        <td className="py-2 px-2.5 text-right font-mono-tabular">
+                          {formatRupiah(c.monthlyHonorarium)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div>
+                <h3 className="font-display text-sm font-bold text-slate-900 mb-2">
+                  Kalender Target Kejuaraan ({competitions.length})
+                </h3>
+                <table className="w-full text-left border-collapse text-xs border border-slate-200">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-600">
+                      <th className="py-2 px-2.5">Nama Kejuaraan</th>
+                      <th className="py-2 px-2.5">Tanggal</th>
+                      <th className="py-2 px-2.5">Lokasi</th>
+                      <th className="py-2 px-2.5">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {competitions.map((k) => (
+                      <tr key={k.id}>
+                        <td className="py-2 px-2.5 font-medium text-slate-900">{k.name}</td>
+                        <td className="py-2 px-2.5 font-mono-tabular">
+                          {formatDateID(k.startDate)}
+                        </td>
+                        <td className="py-2 px-2.5">{k.location} ({k.poolCourse})</td>
+                        <td className="py-2 px-2.5">{k.status}</td>
                       </tr>
                     ))}
                   </tbody>

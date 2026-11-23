@@ -673,6 +673,204 @@ export async function seedSampleRecordsForClub(clubId: string, ownerId: string):
     });
   }
 
+  const coaches = [
+    {
+      id: makeId('coach'),
+      fullName: 'Coach Hendra Wijaya',
+      role: 'Kepala Pelatih',
+      licenseLevel: 'Nasional (PRSI A)',
+      specialization: 'Gaya Bebas & Kupu-Kupu (Prestasi)',
+      phone: '0812-3456-7890',
+      status: 'Aktif',
+      monthlyHonorarium: 4500000,
+      joinDate: '2020-01-15',
+      notes: 'Penanggung jawab program prestasi KU I–KU III dan seleksi Kejurnas.',
+    },
+    {
+      id: makeId('coach'),
+      fullName: 'Coach Rina Marlina',
+      role: 'Pelatih Pemula',
+      licenseLevel: 'Daerah (PRSI B)',
+      specialization: 'Pembinaan Dasar & Gaya Punggung KU IV–KU V',
+      phone: '0813-9988-2211',
+      status: 'Aktif',
+      monthlyHonorarium: 3000000,
+      joinDate: '2022-06-01',
+      notes: 'Fokus teknik dasar pernapasan, koordinasi kaki, dan dryland junior.',
+    },
+    {
+      id: makeId('coach'),
+      fullName: 'Coach Dimas Prasetyo',
+      role: 'Pelatih Fisik (Dryland)',
+      licenseLevel: 'Pelatih Fisik',
+      specialization: 'Core Strength, Mobilitas Bahu & Start Power',
+      phone: '0857-2233-4455',
+      status: 'Aktif',
+      monthlyHonorarium: 2200000,
+      joinDate: '2024-03-10',
+      notes: 'Sesi dryland Jumat sore dan recovery atlet pasca kejuaraan.',
+    },
+  ];
+
+  for (const coach of coaches) {
+    const { id, ...rest } = coach;
+    batch2.set(doc(db, 'coaches', id), {
+      ...rest,
+      clubId,
+      ownerId,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  const pools = [
+    {
+      id: makeId('pool'),
+      name: 'Kolam Renang Pajajaran (50m)',
+      poolType: '50m (Olympic/LCM)',
+      laneCount: 8,
+      address: 'Jl. Pajajaran No. 37, Kota Bandung',
+      rentalCostPerSession: 450000,
+      status: 'Tersedia',
+      notes: 'Kolam utama latihan prestasi dan simulasi kejuaraan (starting block tersedia).',
+    },
+    {
+      id: makeId('pool'),
+      name: 'Kolam Pendek UPI (25m)',
+      poolType: '25m (Short Course)',
+      laneCount: 6,
+      address: 'Jl. Dr. Setiabudhi No. 229, Bandung',
+      rentalCostPerSession: 320000,
+      status: 'Tersedia',
+      notes: 'Ideal untuk kelas KU IV–KU V dan latihan turn/underwater 25m.',
+    },
+    {
+      id: makeId('pool'),
+      name: 'Area Dryland Stadion Akuatik',
+      poolType: 'Area Dryland',
+      laneCount: 4,
+      address: 'Komplek Olahraga Pajajaran, Bandung',
+      rentalCostPerSession: 150000,
+      status: 'Tersedia',
+      notes: 'Matras indoor, resistance band rack, dan medicine ball.',
+    },
+  ];
+
+  for (const pool of pools) {
+    const { id, ...rest } = pool;
+    batch2.set(doc(db, 'pools', id), {
+      ...rest,
+      clubId,
+      ownerId,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  const equipment = [
+    {
+      id: makeId('eq'),
+      itemName: 'Kickboard & Pullbuoy Set',
+      category: 'Alat Teknik Renang',
+      quantity: 24,
+      condition: 'Baik',
+      location: 'Gudang Kolam Pajajaran (Loker A)',
+      lastCheckedDate: '2026-11-10',
+      notes: 'Digunakan rutin setiap sesi teknik Senin & Rabu.',
+    },
+    {
+      id: makeId('eq'),
+      itemName: 'Stopwatch Digital Split 100 Memori',
+      category: 'Timing & Lomba',
+      quantity: 6,
+      condition: 'Baik',
+      location: 'Tas Perlengkapan Pelatih',
+      lastCheckedDate: '2026-11-15',
+      notes: 'Baterai baru diganti November 2026.',
+    },
+    {
+      id: makeId('eq'),
+      itemName: 'Papan Start & Tali Pembatas Lintasan',
+      category: 'Timing & Lomba',
+      quantity: 4,
+      condition: 'Perlu Perbaikan',
+      location: 'Gudang Kolam Pajajaran (Rak B)',
+      lastCheckedDate: '2026-11-12',
+      notes: '2 pengait tali lintasan perlu diganti sebelum Time Trial.',
+    },
+    {
+      id: makeId('eq'),
+      itemName: 'Tas P3K & Pelampung Keselamatan',
+      category: 'Keselamatan & P3K',
+      quantity: 3,
+      condition: 'Baik',
+      location: 'Pos Pelatih Tepi Kolam',
+      lastCheckedDate: '2026-11-18',
+      notes: 'Lengkap dengan oxygen canister mini dan antiseptik.',
+    },
+  ];
+
+  for (const eq of equipment) {
+    const { id, ...rest } = eq;
+    batch2.set(doc(db, 'equipment', id), {
+      ...rest,
+      clubId,
+      ownerId,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  const competitions = [
+    {
+      id: makeId('comp'),
+      name: 'Bandung Open Aquatic Championship 2026',
+      level: 'Provinsi (Kejurda)',
+      startDate: '2026-12-05',
+      endDate: '2026-12-06',
+      location: 'Kolam Si Jalak Harupat, Kab. Bandung',
+      poolCourse: '50m (LCM)',
+      registrationFee: 95000,
+      status: 'Pendaftaran Dibuka',
+      notes: 'Target 8 atlet KU I–KU III turun di maksimal 4 nomor perorangan.',
+    },
+    {
+      id: makeId('comp'),
+      name: 'Time Trial Evaluasi Akhir Tahun Klub',
+      level: 'Klub / Time Trial',
+      startDate: '2026-11-28',
+      endDate: '2026-11-28',
+      location: 'Kolam Renang Pajajaran, Bandung',
+      poolCourse: '50m (LCM)',
+      registrationFee: 0,
+      status: 'Akan Datang',
+      notes: 'Pengukuran waktu resmi internal untuk pembaruan limit PB.',
+    },
+    {
+      id: makeId('comp'),
+      name: 'Jabar Open Aquatic Championship 2026',
+      level: 'Provinsi (Kejurda)',
+      startDate: '2026-10-18',
+      endDate: '2026-10-19',
+      location: 'Bandung',
+      poolCourse: '50m (LCM)',
+      registrationFee: 85000,
+      status: 'Selesai',
+      notes: 'Kontingen meraih 2 Emas dan 1 Perak.',
+    },
+  ];
+
+  for (const comp of competitions) {
+    const { id, ...rest } = comp;
+    batch2.set(doc(db, 'competitions', id), {
+      ...rest,
+      clubId,
+      ownerId,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
   try {
     await batch2.commit();
   } catch (err) {

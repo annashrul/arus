@@ -44,6 +44,7 @@ import {
   CheckCircle2,
   Copy,
   FileText,
+  Filter,
   Layers,
   Plus,
   Printer,
@@ -52,6 +53,7 @@ import {
   X,
 } from 'lucide-react';
 import { ExportActionMenu } from './ExportActionMenu';
+import { BottomSheetSelect } from './BottomSheetSelect';
 
 interface InvoicesAndAdminViewProps {
   club: ClubProfile;
@@ -917,32 +919,25 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
               />
             </div>
 
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5 sm:flex-wrap sm:overflow-visible">
-              <button
-                type="button"
-                onClick={() => setStatusFilter('all')}
-                className={`px-3 min-h-[40px] sm:min-h-[32px] text-xs font-medium rounded-md whitespace-nowrap shrink-0 cursor-pointer ${
-                  statusFilter === 'all'
-                    ? 'bg-slate-900 text-white'
-                    : 'bg-slate-100 text-slate-600'
-                }`}
-              >
-                Semua
-              </button>
-              {INVOICE_STATUSES.map((st) => (
-                <button
-                  key={st}
-                  type="button"
-                  onClick={() => setStatusFilter(st)}
-                  className={`px-3 min-h-[40px] sm:min-h-[32px] text-xs font-medium rounded-md whitespace-nowrap shrink-0 cursor-pointer ${
-                    statusFilter === st
-                      ? 'bg-slate-900 text-white'
-                      : 'bg-slate-100 text-slate-600'
-                  }`}
-                >
-                  {st}
-                </button>
-              ))}
+            <div className="w-full sm:w-56">
+              <BottomSheetSelect
+                value={statusFilter}
+                onChange={setStatusFilter}
+                title="Filter Status Invoice"
+                subtitle="Saring daftar tagihan berdasarkan status pelunasan."
+                triggerPrefix="Status:"
+                icon={<Filter className="w-3.5 h-3.5" />}
+                resetValue="all"
+                resetLabel="Semua"
+                options={[
+                  { value: 'all', label: 'Semua Status', badge: `${invoices.length}` },
+                  ...INVOICE_STATUSES.map((st) => ({
+                    value: st,
+                    label: st,
+                    badge: `${invoices.filter((i) => i.status === st).length}`,
+                  })),
+                ]}
+              />
             </div>
           </div>
 
@@ -1563,19 +1558,20 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                 <label className="block text-xs font-medium text-slate-700 mb-1">
                   Atlet <span className="text-red-600">*</span>
                 </label>
-                <select
+                <BottomSheetSelect
                   value={invAthleteId}
-                  onChange={(e) => handleSelectInvAthlete(e.target.value)}
-                  className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg bg-white ${
-                    invFieldErrors.athleteId ? 'border-red-400 bg-red-50/40' : 'border-slate-200'
-                  }`}
-                >
-                  {athletes.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.fullName} ({a.ageGroup})
-                    </option>
-                  ))}
-                </select>
+                  onChange={(val) => handleSelectInvAthlete(val)}
+                  title="Pilih Atlet Penerima Invoice"
+                  placeholder="Pilih atlet..."
+                  searchable={athletes.length > 5}
+                  hasError={Boolean(invFieldErrors.athleteId)}
+                  options={athletes.map((a) => ({
+                    value: a.id,
+                    label: a.fullName,
+                    badge: a.ageGroup,
+                    description: a.parentName ? `Wali: ${a.parentName}` : undefined,
+                  }))}
+                />
                 {invFieldErrors.athleteId && (
                   <p className="text-[11px] text-red-600 mt-1">{invFieldErrors.athleteId}</p>
                 )}
@@ -1586,22 +1582,16 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                   <label className="block text-xs font-medium text-slate-700 mb-1">
                     Kategori Tagihan <span className="text-red-600">*</span>
                   </label>
-                  <select
+                  <BottomSheetSelect
                     value={invCategory}
-                    onChange={(e) => {
-                      setInvCategory(e.target.value as InvoiceCategory);
+                    onChange={(val) => {
+                      setInvCategory(val as InvoiceCategory);
                       setInvFieldErrors((p) => ({ ...p, category: undefined }));
                     }}
-                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg bg-white ${
-                      invFieldErrors.category ? 'border-red-400 bg-red-50/40' : 'border-slate-200'
-                    }`}
-                  >
-                    {INVOICE_CATEGORIES.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
+                    title="Pilih Kategori Tagihan"
+                    hasError={Boolean(invFieldErrors.category)}
+                    options={INVOICE_CATEGORIES.map((c) => ({ value: c, label: c }))}
+                  />
                   {invFieldErrors.category && (
                     <p className="text-[11px] text-red-600 mt-1">{invFieldErrors.category}</p>
                   )}
@@ -1906,22 +1896,16 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                   <label className="block text-xs font-medium text-slate-700 mb-1">
                     Metode Bayar <span className="text-red-600">*</span>
                   </label>
-                  <select
+                  <BottomSheetSelect
                     value={payMethod}
-                    onChange={(e) => {
-                      setPayMethod(e.target.value as PaymentMethod);
+                    onChange={(val) => {
+                      setPayMethod(val as PaymentMethod);
                       setPayFieldErrors((p) => ({ ...p, payMethod: undefined }));
                     }}
-                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg bg-white ${
-                      payFieldErrors.payMethod ? 'border-red-400 bg-red-50/40' : 'border-slate-200'
-                    }`}
-                  >
-                    {PAYMENT_METHODS.map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))}
-                  </select>
+                    title="Pilih Metode Pembayaran"
+                    hasError={Boolean(payFieldErrors.payMethod)}
+                    options={PAYMENT_METHODS.map((m) => ({ value: m, label: m }))}
+                  />
                   {payFieldErrors.payMethod && (
                     <p className="text-[11px] text-red-600 mt-1">{payFieldErrors.payMethod}</p>
                   )}
@@ -2172,22 +2156,16 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                   <label className="block text-xs font-medium text-slate-700 mb-1">
                     Jenis Dokumen <span className="text-red-600">*</span>
                   </label>
-                  <select
+                  <BottomSheetSelect
                     value={annType}
-                    onChange={(e) => {
-                      setAnnType(e.target.value as AnnouncementDocType);
+                    onChange={(val) => {
+                      setAnnType(val as AnnouncementDocType);
                       setAnnFieldErrors((p) => ({ ...p, type: undefined }));
                     }}
-                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg bg-white ${
-                      annFieldErrors.type ? 'border-red-400 bg-red-50/40' : 'border-slate-200'
-                    }`}
-                  >
-                    {ANNOUNCEMENT_TYPES.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </select>
+                    title="Pilih Jenis Dokumen"
+                    hasError={Boolean(annFieldErrors.type)}
+                    options={ANNOUNCEMENT_TYPES.map((t) => ({ value: t, label: t }))}
+                  />
                   {annFieldErrors.type && (
                     <p className="text-[11px] text-red-600 mt-1">{annFieldErrors.type}</p>
                   )}

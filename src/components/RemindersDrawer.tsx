@@ -16,10 +16,14 @@ import {
   Clock,
   Copy,
   FileText,
+  Filter,
+  Package,
   Receipt,
   RotateCcw,
+  Trophy,
   X,
 } from 'lucide-react';
+import { BottomSheetSelect } from './BottomSheetSelect';
 
 interface RemindersDrawerProps {
   open: boolean;
@@ -56,6 +60,7 @@ export const RemindersDrawer: React.FC<RemindersDrawerProps> = ({
       if (dismissedIds.includes(r.id)) return false;
       if (filterCat === 'all') return true;
       if (filterCat === 'schedule') return r.category === 'schedule' || r.category === 'attendance';
+      if (filterCat === 'competition') return r.category === 'competition' || r.category === 'equipment';
       return r.category === filterCat;
     });
   }, [reminders, dismissedIds, filterCat]);
@@ -136,6 +141,12 @@ export const RemindersDrawer: React.FC<RemindersDrawerProps> = ({
     }
     if (r.category === 'announcement') {
       return <FileText className="w-4 h-4 shrink-0 text-sky-700" />;
+    }
+    if (r.category === 'competition') {
+      return <Trophy className="w-4 h-4 shrink-0 text-amber-600" />;
+    }
+    if (r.category === 'equipment') {
+      return <Package className="w-4 h-4 shrink-0 text-amber-600" />;
     }
     return <CalendarDays className="w-4 h-4 shrink-0 text-sky-700" />;
   };
@@ -219,29 +230,24 @@ export const RemindersDrawer: React.FC<RemindersDrawerProps> = ({
           )}
         </div>
 
-        {/* Category Filter */}
-        <div className="px-4 sm:px-6 py-2.5 border-b border-slate-100 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-          {(
-            [
-              { id: 'all', label: 'Semua' },
-              { id: 'invoice', label: 'Tagihan' },
-              { id: 'schedule', label: 'Jadwal & Presensi' },
-              { id: 'announcement', label: 'Agenda' },
-            ] as const
-          ).map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setFilterCat(tab.id)}
-              className={`px-3 min-h-[36px] text-xs font-medium rounded-md whitespace-nowrap shrink-0 cursor-pointer ${
-                filterCat === tab.id
-                  ? 'bg-slate-900 text-white'
-                  : 'bg-slate-100 text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+        {/* Category Filter (Native-style Bottom Sheet) */}
+        <div className="px-4 sm:px-6 py-2.5 border-b border-slate-100">
+          <BottomSheetSelect
+            value={filterCat}
+            onChange={(v) => setFilterCat(v as 'all' | ReminderCategory)}
+            title="Filter Kategori Pengingat"
+            subtitle="Pilih jenis pengingat operasional yang ingin ditampilkan."
+            triggerPrefix="Kategori:"
+            icon={<Filter className="w-3.5 h-3.5" />}
+            resetValue="all"
+            options={[
+              { value: 'all', label: 'Semua Pengingat', description: 'Tagihan, jadwal, agenda, kejuaraan & alat' },
+              { value: 'invoice', label: 'Tagihan & Jatuh Tempo', description: 'Invoice belum lunas atau terlambat' },
+              { value: 'schedule', label: 'Jadwal & Presensi', description: 'Sesi latihan hari ini, besok & absensi' },
+              { value: 'announcement', label: 'Agenda Surat & Rapat', description: 'Pengumuman dengan tanggal pelaksanaan' },
+              { value: 'competition', label: 'Kejuaraan & Inventaris', description: 'Kalender lomba terdekat & alat perlu perbaikan' },
+            ]}
+          />
         </div>
 
         {/* Reminder List */}

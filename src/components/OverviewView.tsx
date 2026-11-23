@@ -4,12 +4,16 @@ import {
   Athlete,
   AttendanceRecord,
   ClubAnnouncement,
+  ClubCompetition,
   ClubInvoice,
   ClubProfile,
+  Coach,
   currentMonthLabel,
+  EquipmentItem,
   FinanceTransaction,
   formatDateID,
   formatRupiah,
+  PoolFacility,
   SwimTime,
   todayISO,
   TrainingSchedule,
@@ -44,7 +48,8 @@ export type NavSection =
   | 'finance'
   | 'athletes'
   | 'schedules'
-  | 'invoices';
+  | 'invoices'
+  | 'clubops';
 
 interface OverviewViewProps {
   club: ClubProfile;
@@ -55,6 +60,10 @@ interface OverviewViewProps {
   attendance: AttendanceRecord[];
   invoices: ClubInvoice[];
   announcements: ClubAnnouncement[];
+  coaches?: Coach[];
+  pools?: PoolFacility[];
+  equipment?: EquipmentItem[];
+  competitions?: ClubCompetition[];
   reminders: ClubReminder[];
   onOpenReminders: () => void;
   onOpenPrintReport: (kind: PrintReportKind) => void;
@@ -72,6 +81,10 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
   attendance,
   invoices,
   announcements,
+  coaches = [],
+  pools = [],
+  equipment = [],
+  competitions = [],
   reminders,
   onOpenReminders,
   onOpenPrintReport,
@@ -262,7 +275,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
               {
                 id: 'full-excel',
                 label: 'Workbook Excel (.xls)',
-                description: 'Semua data klub (7 sheet: Kas, Atlet, Waktu, Jadwal, Presensi, Invoice)',
+                description: 'Semua data klub (Kas, Atlet, Waktu, Jadwal, Presensi, Invoice, Pelatih & Klub)',
                 format: 'excel',
                 onSelect: () =>
                   downloadFullClubExcel(club, {
@@ -272,6 +285,10 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                     schedules,
                     attendance,
                     invoices,
+                    coaches,
+                    pools,
+                    equipment,
+                    competitions,
                   }),
               },
               {
@@ -285,7 +302,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
               {
                 id: 'full-json',
                 label: 'Backup Lengkap (.json)',
-                description: 'Arsip seluruh data klub termasuk surat administrasi',
+                description: 'Arsip seluruh data klub termasuk pelatih, kolam & administrasi',
                 format: 'json',
                 onSelect: () =>
                   downloadJSONBackup(club, {
@@ -296,6 +313,10 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                     attendance,
                     invoices,
                     announcements,
+                    coaches,
+                    pools,
+                    equipment,
+                    competitions,
                   }),
               },
             ]}

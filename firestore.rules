@@ -227,6 +227,74 @@ service cloud.firestore {
         && data.updatedAt is timestamp;
     }
 
+    function isValidCoach(data) {
+      return data.keys().hasAll(['clubId', 'ownerId', 'fullName', 'role', 'licenseLevel', 'status', 'monthlyHonorarium', 'joinDate', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['clubId', 'ownerId', 'fullName', 'role', 'licenseLevel', 'specialization', 'phone', 'status', 'monthlyHonorarium', 'joinDate', 'notes', 'createdAt', 'updatedAt'])
+        && isValidId(data.clubId)
+        && isValidId(data.ownerId)
+        && data.fullName is string && data.fullName.size() >= 2 && data.fullName.size() <= 80
+        && data.role in ['Kepala Pelatih', 'Pelatih Prestasi', 'Pelatih Pemula', 'Pelatih Fisik (Dryland)', 'Admin & Medis']
+        && data.licenseLevel in ['Nasional (PRSI A)', 'Daerah (PRSI B)', 'Dasar (PRSI C)', 'Pelatih Fisik', 'Non-Lisensi']
+        && (!('specialization' in data) || (data.specialization is string && data.specialization.size() <= 100))
+        && (!('phone' in data) || (data.phone is string && data.phone.size() <= 25))
+        && data.status in ['Aktif', 'Cuti', 'Nonaktif']
+        && data.monthlyHonorarium is number && data.monthlyHonorarium >= 0 && data.monthlyHonorarium <= 100000000
+        && isValidDateStr(data.joinDate)
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 300))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidPoolFacility(data) {
+      return data.keys().hasAll(['clubId', 'ownerId', 'name', 'poolType', 'laneCount', 'rentalCostPerSession', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['clubId', 'ownerId', 'name', 'poolType', 'laneCount', 'address', 'rentalCostPerSession', 'status', 'notes', 'createdAt', 'updatedAt'])
+        && isValidId(data.clubId)
+        && isValidId(data.ownerId)
+        && data.name is string && data.name.size() >= 2 && data.name.size() <= 100
+        && data.poolType in ['50m (Olympic/LCM)', '25m (Short Course)', 'Kolam Pemanasan', 'Area Dryland']
+        && data.laneCount is number && data.laneCount >= 1 && data.laneCount <= 20
+        && (!('address' in data) || (data.address is string && data.address.size() <= 160))
+        && data.rentalCostPerSession is number && data.rentalCostPerSession >= 0 && data.rentalCostPerSession <= 50000000
+        && data.status in ['Tersedia', 'Renovasi', 'Tidak Aktif']
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 300))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidEquipmentItem(data) {
+      return data.keys().hasAll(['clubId', 'ownerId', 'itemName', 'category', 'quantity', 'condition', 'lastCheckedDate', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['clubId', 'ownerId', 'itemName', 'category', 'quantity', 'condition', 'location', 'lastCheckedDate', 'notes', 'createdAt', 'updatedAt'])
+        && isValidId(data.clubId)
+        && isValidId(data.ownerId)
+        && data.itemName is string && data.itemName.size() >= 2 && data.itemName.size() <= 100
+        && data.category in ['Alat Teknik Renang', 'Timing & Lomba', 'Dryland & Kebugaran', 'Keselamatan & P3K', 'Atribut & Seragam']
+        && data.quantity is number && data.quantity >= 0 && data.quantity <= 10000
+        && data.condition in ['Baik', 'Perlu Perbaikan', 'Rusak']
+        && (!('location' in data) || (data.location is string && data.location.size() <= 100))
+        && isValidDateStr(data.lastCheckedDate)
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 300))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCompetition(data) {
+      return data.keys().hasAll(['clubId', 'ownerId', 'name', 'level', 'startDate', 'endDate', 'location', 'poolCourse', 'registrationFee', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['clubId', 'ownerId', 'name', 'level', 'startDate', 'endDate', 'location', 'poolCourse', 'registrationFee', 'status', 'notes', 'createdAt', 'updatedAt'])
+        && isValidId(data.clubId)
+        && isValidId(data.ownerId)
+        && data.name is string && data.name.size() >= 2 && data.name.size() <= 120
+        && data.level in ['Klub / Time Trial', 'Kota / Kabupaten', 'Provinsi (Kejurda)', 'Nasional (Kejurnas)', 'Internasional']
+        && isValidDateStr(data.startDate)
+        && isValidDateStr(data.endDate)
+        && data.location is string && data.location.size() >= 2 && data.location.size() <= 100
+        && data.poolCourse in ['50m (LCM)', '25m (SCM)']
+        && data.registrationFee is number && data.registrationFee >= 0 && data.registrationFee <= 100000000
+        && data.status in ['Akan Datang', 'Pendaftaran Dibuka', 'Berlangsung', 'Selesai', 'Dibatalkan']
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 300))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
     // ---------------------------------------------------------
     // Collection Match Rules
     // ---------------------------------------------------------
@@ -417,6 +485,94 @@ service cloud.firestore {
         && (isOwnerOfExisting() || isAdmin())
         && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'docType', 'eventDate', 'content', 'targetGroup', 'authorName', 'updatedAt']);
       allow delete: if isVerifiedUser() && isValidId(announcementId) && (isOwnerOfExisting() || isAdmin());
+    }
+
+    match /coaches/{coachId} {
+      allow get: if isSignedIn() && isValidId(coachId) && (isOwnerOfExisting() || isAdmin());
+      allow list: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow create: if isVerifiedUser()
+        && isValidId(coachId)
+        && isValidCoach(incoming())
+        && incoming().ownerId == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && isOwningClub(incoming().clubId);
+      allow update: if isVerifiedUser()
+        && isValidId(coachId)
+        && isValidCoach(incoming())
+        && incoming().ownerId == existing().ownerId
+        && incoming().clubId == existing().clubId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (isOwnerOfExisting() || isAdmin())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['fullName', 'role', 'licenseLevel', 'specialization', 'phone', 'status', 'monthlyHonorarium', 'joinDate', 'notes', 'updatedAt']);
+      allow delete: if isVerifiedUser() && isValidId(coachId) && (isOwnerOfExisting() || isAdmin());
+    }
+
+    match /pools/{poolId} {
+      allow get: if isSignedIn() && isValidId(poolId) && (isOwnerOfExisting() || isAdmin());
+      allow list: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow create: if isVerifiedUser()
+        && isValidId(poolId)
+        && isValidPoolFacility(incoming())
+        && incoming().ownerId == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && isOwningClub(incoming().clubId);
+      allow update: if isVerifiedUser()
+        && isValidId(poolId)
+        && isValidPoolFacility(incoming())
+        && incoming().ownerId == existing().ownerId
+        && incoming().clubId == existing().clubId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (isOwnerOfExisting() || isAdmin())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'poolType', 'laneCount', 'address', 'rentalCostPerSession', 'status', 'notes', 'updatedAt']);
+      allow delete: if isVerifiedUser() && isValidId(poolId) && (isOwnerOfExisting() || isAdmin());
+    }
+
+    match /equipment/{equipmentId} {
+      allow get: if isSignedIn() && isValidId(equipmentId) && (isOwnerOfExisting() || isAdmin());
+      allow list: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow create: if isVerifiedUser()
+        && isValidId(equipmentId)
+        && isValidEquipmentItem(incoming())
+        && incoming().ownerId == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && isOwningClub(incoming().clubId);
+      allow update: if isVerifiedUser()
+        && isValidId(equipmentId)
+        && isValidEquipmentItem(incoming())
+        && incoming().ownerId == existing().ownerId
+        && incoming().clubId == existing().clubId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (isOwnerOfExisting() || isAdmin())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['itemName', 'category', 'quantity', 'condition', 'location', 'lastCheckedDate', 'notes', 'updatedAt']);
+      allow delete: if isVerifiedUser() && isValidId(equipmentId) && (isOwnerOfExisting() || isAdmin());
+    }
+
+    match /competitions/{competitionId} {
+      allow get: if isSignedIn() && isValidId(competitionId) && (isOwnerOfExisting() || isAdmin());
+      allow list: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow create: if isVerifiedUser()
+        && isValidId(competitionId)
+        && isValidCompetition(incoming())
+        && incoming().ownerId == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && isOwningClub(incoming().clubId);
+      allow update: if isVerifiedUser()
+        && isValidId(competitionId)
+        && isValidCompetition(incoming())
+        && incoming().ownerId == existing().ownerId
+        && incoming().clubId == existing().clubId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (isOwnerOfExisting() || isAdmin())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'level', 'startDate', 'endDate', 'location', 'poolCourse', 'registrationFee', 'status', 'notes', 'updatedAt']);
+      allow delete: if isVerifiedUser() && isValidId(competitionId) && (isOwnerOfExisting() || isAdmin());
     }
   }
 }

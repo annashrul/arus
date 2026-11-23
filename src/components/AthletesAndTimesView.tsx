@@ -25,6 +25,7 @@ import {
   AthleteStatus,
   ClubInvoice,
   ClubProfile,
+  Coach,
   downloadCSV,
   formatDateID,
   formatRupiah,
@@ -52,17 +53,20 @@ import {
   CheckCircle2,
   Edit3,
   Eye,
+  Filter,
   Plus,
   Printer,
   Search,
   Timer,
   Trash2,
   Trophy,
+  UserCheck,
   UserPlus,
   X,
 } from 'lucide-react';
 import { AthleteCompetitionChart } from './TrendCharts';
 import { ExportActionMenu } from './ExportActionMenu';
+import { BottomSheetSelect } from './BottomSheetSelect';
 
 interface AthletesAndTimesViewProps {
   club: ClubProfile;
@@ -70,6 +74,7 @@ interface AthletesAndTimesViewProps {
   athletes: Athlete[];
   swimTimes: SwimTime[];
   invoices: ClubInvoice[];
+  coaches?: Coach[];
   onOpenPrintReport: () => void;
 }
 
@@ -79,6 +84,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
   athletes,
   swimTimes,
   invoices,
+  coaches = [],
   onOpenPrintReport,
 }) => {
   const [activeTab, setActiveTab] = useState<'athletes' | 'times'>('athletes');
@@ -88,6 +94,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
   const [athleteSearch, setAthleteSearch] = useState('');
   const [ageGroupFilter, setAgeGroupFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [coachFilter, setCoachFilter] = useState<string>('all');
 
   // Swim times filters
   const [timeSearch, setTimeSearch] = useState('');
@@ -137,12 +144,24 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
   const [timeFieldErrors, setTimeFieldErrors] = useState<FieldErrors<string>>({});
   const [savingTime, setSavingTime] = useState(false);
 
+  const coachFilterOptions = useMemo(() => {
+    const names = new Set<string>();
+    for (const c of coaches) {
+      if (c.fullName.trim()) names.add(c.fullName.trim());
+    }
+    for (const a of athletes) {
+      if (a.coachName && a.coachName.trim()) names.add(a.coachName.trim());
+    }
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }, [coaches, athletes]);
+
   const filteredAthletes = useMemo(() => {
     const q = athleteSearch.trim().toLowerCase();
     return [...athletes]
       .filter((a) => {
         if (ageGroupFilter !== 'all' && a.ageGroup !== ageGroupFilter) return false;
         if (statusFilter !== 'all' && a.status !== statusFilter) return false;
+        if (coachFilter !== 'all' && (a.coachName || club.headCoach) !== coachFilter) return false;
         if (q) {
           const hay = `${a.fullName} ${a.parentName || ''} ${a.coachName || ''} ${a.ageGroup}`.toLowerCase();
           if (!hay.includes(q)) return false;
@@ -150,7 +169,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
         return true;
       })
       .sort((a, b) => a.fullName.localeCompare(b.fullName));
-  }, [athletes, athleteSearch, ageGroupFilter, statusFilter]);
+  }, [athletes, athleteSearch, ageGroupFilter, statusFilter, coachFilter, club.headCoach]);
 
   const filteredTimes = useMemo(() => {
     const q = timeSearch.trim().toLowerCase();
@@ -740,30 +759,56 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
               />
             </div>
 
-            <div className="grid grid-cols-2 sm:flex items-center gap-2.5">
-              <select
-                value={ageGroupFilter}
-                onChange={(e) => setAgeGroupFilter(e.target.value)}
-                className="w-full sm:w-auto px-3 min-h-[44px] sm:min-h-[36px] text-sm sm:text-xs border border-slate-200 rounded-lg bg-white text-slate-700"
-              >
-                <option value="all">Semua KU</option>
-                {AGE_GROUPS.map((g) => (
-                  <option key={g} value={g}>
-                    {g}
-                  </option>
-                ))}
-              </select>
+            <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2.5">
+              <div className="w-full sm:w-40">
+                <BottomSheetSelect
+                  value={ageGroupFilter}
+                  onChange={setAgeGroupFilter}
+                  title="Filter Kelompok Umur"
+                  triggerPrefix="KU:"
+                  icon={<Filter className="w-3.5 h-3.5" />}
+                  resetValue="all"
+                  options={[
+                    { value: 'all', label: 'Semua KU' },
+                    ...AGE_GROUPS.map((g) => ({ value: g, label: g })),
+                  ]}
+                />
+              </div>
 
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="w-full sm:w-auto px-3 min-h-[44px] sm:min-h-[36px] text-sm sm:text-xs border border-slate-200 rounded-lg bg-white text-slate-700"
-              >
-                <option value="all">Semua Status</option>
-                <option value="Aktif">Aktif</option>
-                <option value="Cuti">Cuti</option>
-                <option value="Nonaktif">Nonaktif</option>
-              </select>
+              <div className="w-full sm:w-40">
+                <BottomSheetSelect
+                  value={statusFilter}
+                  onChange={setStatusFilter}
+                  title="Filter Status Atlet"
+                  triggerPrefix="Status:"
+                  icon={<Filter className="w-3.5 h-3.5" />}
+                  resetValue="all"
+                  options={[
+                    { value: 'all', label: 'Semua Status' },
+                    { value: 'Aktif', label: 'Aktif' },
+                    { value: 'Cuti', label: 'Cuti' },
+                    { value: 'Nonaktif', label: 'Nonaktif' },
+                  ]}
+                />
+              </div>
+
+              {coachFilterOptions.length > 0 && (
+                <div className="col-span-2 sm:col-span-1 w-full sm:w-48">
+                  <BottomSheetSelect
+                    value={coachFilter}
+                    onChange={setCoachFilter}
+                    title="Filter Pelatih Penanggung Jawab"
+                    triggerPrefix="Pelatih:"
+                    icon={<UserCheck className="w-3.5 h-3.5" />}
+                    resetValue="all"
+                    searchable={coachFilterOptions.length > 5}
+                    options={[
+                      { value: 'all', label: 'Semua Pelatih' },
+                      ...coachFilterOptions.map((c) => ({ value: c, label: c })),
+                    ]}
+                  />
+                </div>
+              )}
             </div>
           </div>
 
@@ -1014,31 +1059,35 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
             </div>
 
             <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2.5">
-              <select
-                value={strokeFilter}
-                onChange={(e) => setStrokeFilter(e.target.value)}
-                className="w-full sm:w-auto px-3 min-h-[44px] sm:min-h-[36px] text-sm sm:text-xs border border-slate-200 rounded-lg bg-white text-slate-700"
-              >
-                <option value="all">Semua Gaya</option>
-                {SWIM_STROKES.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
+              <div className="w-full sm:w-44">
+                <BottomSheetSelect
+                  value={strokeFilter}
+                  onChange={setStrokeFilter}
+                  title="Filter Gaya Renang"
+                  triggerPrefix="Gaya:"
+                  icon={<Filter className="w-3.5 h-3.5" />}
+                  resetValue="all"
+                  options={[
+                    { value: 'all', label: 'Semua Gaya' },
+                    ...SWIM_STROKES.map((s) => ({ value: s, label: s })),
+                  ]}
+                />
+              </div>
 
-              <select
-                value={courseFilter}
-                onChange={(e) => setCourseFilter(e.target.value)}
-                className="w-full sm:w-auto px-3 min-h-[44px] sm:min-h-[36px] text-sm sm:text-xs border border-slate-200 rounded-lg bg-white text-slate-700"
-              >
-                <option value="all">Semua Kolam</option>
-                {POOL_COURSES.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
+              <div className="w-full sm:w-44">
+                <BottomSheetSelect
+                  value={courseFilter}
+                  onChange={setCourseFilter}
+                  title="Filter Lintasan Kolam"
+                  triggerPrefix="Kolam:"
+                  icon={<Filter className="w-3.5 h-3.5" />}
+                  resetValue="all"
+                  options={[
+                    { value: 'all', label: 'Semua Kolam' },
+                    ...POOL_COURSES.map((c) => ({ value: c, label: c })),
+                  ]}
+                />
+              </div>
 
               <label className="col-span-2 sm:col-span-1 inline-flex items-center gap-2 px-3 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-slate-700 border border-slate-200 rounded-lg cursor-pointer bg-white">
                 <input
@@ -1447,42 +1496,39 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">Gender</label>
-                  <select
+                  <BottomSheetSelect
                     value={gender}
-                    onChange={(e) => setGender(e.target.value as AthleteGender)}
-                    className="w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border border-slate-200 rounded-lg bg-white"
-                  >
-                    <option value="Putra">Putra</option>
-                    <option value="Putri">Putri</option>
-                  </select>
+                    onChange={(v) => setGender(v as AthleteGender)}
+                    title="Pilih Gender Atlet"
+                    options={[
+                      { value: 'Putra', label: 'Putra' },
+                      { value: 'Putri', label: 'Putri' },
+                    ]}
+                  />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">
                     Kelompok Umur
                   </label>
-                  <select
+                  <BottomSheetSelect
                     value={ageGroup}
-                    onChange={(e) => setAgeGroup(e.target.value as AgeGroup)}
-                    className="w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border border-slate-200 rounded-lg bg-white"
-                  >
-                    {AGE_GROUPS.map((g) => (
-                      <option key={g} value={g}>
-                        {g}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(v) => setAgeGroup(v as AgeGroup)}
+                    title="Pilih Kelompok Umur"
+                    options={AGE_GROUPS.map((g) => ({ value: g, label: g }))}
+                  />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">Status</label>
-                  <select
+                  <BottomSheetSelect
                     value={status}
-                    onChange={(e) => setStatus(e.target.value as AthleteStatus)}
-                    className="w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border border-slate-200 rounded-lg bg-white"
-                  >
-                    <option value="Aktif">Aktif</option>
-                    <option value="Cuti">Cuti</option>
-                    <option value="Nonaktif">Nonaktif</option>
-                  </select>
+                    onChange={(v) => setStatus(v as AthleteStatus)}
+                    title="Pilih Status Keaktifan Atlet"
+                    options={[
+                      { value: 'Aktif', label: 'Aktif' },
+                      { value: 'Cuti', label: 'Cuti' },
+                      { value: 'Nonaktif', label: 'Nonaktif' },
+                    ]}
+                  />
                 </div>
               </div>
 
@@ -1591,6 +1637,27 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                       athleteFieldErrors.coachName ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
                     }`}
                   />
+                  {coaches.length > 0 && (
+                    <div className="mt-1.5">
+                      <BottomSheetSelect
+                        value={coaches.some((c) => c.fullName === coachName) ? coachName : ''}
+                        onChange={(val) => {
+                          setCoachName(val);
+                          clearAthleteError('coachName');
+                        }}
+                        title="Pilih Pelatih Terdaftar"
+                        subtitle="Atau ketik manual nama pelatih di kolom atas."
+                        placeholder="Pilih cepat dari daftar pelatih klub..."
+                        icon={<UserCheck className="w-3.5 h-3.5" />}
+                        options={coaches.map((c) => ({
+                          value: c.fullName,
+                          label: c.fullName,
+                          description: c.role,
+                          badge: c.status,
+                        }))}
+                      />
+                    </div>
+                  )}
                   {athleteFieldErrors.coachName && (
                     <p className="mt-1 text-xs text-red-600">{athleteFieldErrors.coachName}</p>
                   )}
@@ -1692,24 +1759,23 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                 <label className="block text-xs font-medium text-slate-700 mb-1">
                   Atlet <span className="text-red-500">*</span>
                 </label>
-                <select
+                <BottomSheetSelect
                   value={stAthleteId}
-                  onChange={(e) => {
-                    setStAthleteId(e.target.value);
+                  onChange={(val) => {
+                    setStAthleteId(val);
                     clearTimeError('athleteId');
                     clearTimeError('meetDate');
                   }}
                   disabled={!!editingTime}
-                  className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg bg-white disabled:bg-slate-50 ${
-                    timeFieldErrors.athleteId ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
-                  }`}
-                >
-                  {athletes.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.fullName} ({a.ageGroup})
-                    </option>
-                  ))}
-                </select>
+                  title="Pilih Atlet"
+                  searchable={athletes.length > 5}
+                  hasError={Boolean(timeFieldErrors.athleteId)}
+                  options={athletes.map((a) => ({
+                    value: a.id,
+                    label: a.fullName,
+                    badge: a.ageGroup,
+                  }))}
+                />
                 {timeFieldErrors.athleteId && (
                   <p className="mt-1 text-xs text-red-600">{timeFieldErrors.athleteId}</p>
                 )}
@@ -1718,45 +1784,30 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">Jarak</label>
-                  <select
-                    value={stDistance}
-                    onChange={(e) => setStDistance(Number(e.target.value))}
-                    className="w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm font-mono-tabular border border-slate-200 rounded-lg bg-white"
-                  >
-                    {SWIM_DISTANCES.map((d) => (
-                      <option key={d} value={d}>
-                        {d}m
-                      </option>
-                    ))}
-                  </select>
+                  <BottomSheetSelect
+                    value={String(stDistance)}
+                    onChange={(v) => setStDistance(Number(v))}
+                    title="Pilih Jarak Lomba"
+                    options={SWIM_DISTANCES.map((d) => ({ value: String(d), label: `${d}m` }))}
+                  />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">Gaya</label>
-                  <select
+                  <BottomSheetSelect
                     value={stStroke}
-                    onChange={(e) => setStStroke(e.target.value as SwimStroke)}
-                    className="w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border border-slate-200 rounded-lg bg-white"
-                  >
-                    {SWIM_STROKES.map((s) => (
-                      <option key={s} value={s}>
-                        {s}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(v) => setStStroke(v as SwimStroke)}
+                    title="Pilih Gaya Renang"
+                    options={SWIM_STROKES.map((s) => ({ value: s, label: s }))}
+                  />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">Lintasan</label>
-                  <select
+                  <BottomSheetSelect
                     value={stPoolCourse}
-                    onChange={(e) => setStPoolCourse(e.target.value as PoolCourse)}
-                    className="w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border border-slate-200 rounded-lg bg-white"
-                  >
-                    {POOL_COURSES.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(v) => setStPoolCourse(v as PoolCourse)}
+                    title="Pilih Lintasan Kolam"
+                    options={POOL_COURSES.map((c) => ({ value: c, label: c }))}
+                  />
                 </div>
               </div>
 
@@ -1793,17 +1844,12 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                   <label className="block text-xs font-medium text-slate-700 mb-1">
                     Peringkat / Medali
                   </label>
-                  <select
+                  <BottomSheetSelect
                     value={stMedal}
-                    onChange={(e) => setStMedal(e.target.value as MedalType)}
-                    className="w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border border-slate-200 rounded-lg bg-white"
-                  >
-                    {MEDAL_TYPES.map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(v) => setStMedal(v as MedalType)}
+                    title="Pilih Peringkat / Medali"
+                    options={MEDAL_TYPES.map((m) => ({ value: m, label: m }))}
+                  />
                 </div>
               </div>
 

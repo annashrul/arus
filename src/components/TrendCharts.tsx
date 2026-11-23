@@ -10,7 +10,8 @@ import {
   SwimTime,
   TrainingSchedule,
 } from '../types/club';
-import { TrendingDown, TrendingUp } from 'lucide-react';
+import { Filter, TrendingDown, TrendingUp, Users } from 'lucide-react';
+import { BottomSheetSelect } from './BottomSheetSelect';
 
 interface CashflowTrendChartProps {
   transactions: FinanceTransaction[];
@@ -394,20 +395,25 @@ export const SwimTimeTrendChart: React.FC<SwimTimeTrendChartProps> = ({
           </p>
         </div>
 
-        <select
-          value={activeCombo?.key || ''}
-          onChange={(e) => {
-            setSelectedKey(e.target.value);
-            setActivePointIdx(null);
-          }}
-          className="w-full sm:w-auto px-3 min-h-[44px] sm:min-h-[36px] text-sm sm:text-xs border border-slate-200 rounded-lg bg-white text-slate-800 sm:max-w-xs"
-        >
-          {combos.map((c) => (
-            <option key={c.key} value={c.key}>
-              {c.label} ({c.items.length}x)
-            </option>
-          ))}
-        </select>
+        <div className="w-full sm:w-72">
+          <BottomSheetSelect
+            value={activeCombo?.key || ''}
+            onChange={(val) => {
+              setSelectedKey(val);
+              setActivePointIdx(null);
+            }}
+            title="Pilih Atlet & Nomor Lomba"
+            subtitle="Tampilkan progres catatan waktu kejuaraan dari waktu ke waktu."
+            icon={<Filter className="w-3.5 h-3.5" />}
+            searchable={combos.length > 5}
+            searchPlaceholder="Cari nama atlet atau nomor..."
+            options={combos.map((c) => ({
+              value: c.key,
+              label: c.label,
+              badge: `${c.items.length}x`,
+            }))}
+          />
+        </div>
       </div>
 
       {stats && activePoint && (
@@ -1659,60 +1665,75 @@ export const AthleteCompetitionChart: React.FC<AthleteCompetitionChartProps> = (
           {effectiveMode === 'per_athlete' ? (
             <>
               {!lockedAthleteId && (
-                <select
-                  value={effectiveAthleteId}
-                  onChange={(e) => {
-                    setSelectedAthleteId(e.target.value);
-                    setSelectedEventKey('');
-                    setActiveMeetIdx(null);
-                  }}
-                  aria-label="Pilih atlet untuk grafik"
-                  className="px-3 min-h-[40px] sm:min-h-[36px] text-xs border border-slate-200 rounded-lg bg-white text-slate-800 max-w-[220px]"
-                >
-                  {athleteOptions.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name} ({a.count} lomba)
-                    </option>
-                  ))}
-                </select>
+                <div className="w-full sm:w-56">
+                  <BottomSheetSelect
+                    value={effectiveAthleteId}
+                    onChange={(val) => {
+                      setSelectedAthleteId(val);
+                      setSelectedEventKey('');
+                      setActiveMeetIdx(null);
+                    }}
+                    title="Pilih Atlet"
+                    subtitle="Bandingkan perkembangan catatan waktu antar kejuaraan."
+                    icon={<Users className="w-3.5 h-3.5" />}
+                    searchable={athleteOptions.length > 5}
+                    searchPlaceholder="Cari nama atlet..."
+                    ariaLabel="Pilih atlet untuk grafik"
+                    options={athleteOptions.map((a) => ({
+                      value: a.id,
+                      label: a.name,
+                      badge: `${a.count} lomba`,
+                    }))}
+                  />
+                </div>
               )}
 
               {athleteEvents.length > 0 && (
-                <select
-                  value={effectiveEventKey}
-                  onChange={(e) => {
-                    setSelectedEventKey(e.target.value);
-                    setActiveMeetIdx(null);
-                  }}
-                  aria-label="Pilih nomor lomba atlet"
-                  className="px-3 min-h-[40px] sm:min-h-[36px] text-xs border border-slate-200 rounded-lg bg-white text-slate-800 max-w-[240px]"
-                >
-                  <option value="__ALL__">Semua Nomor ({athleteEvents.length})</option>
-                  {athleteEvents.map((ev) => (
-                    <option key={ev.key} value={ev.key}>
-                      {ev.label} ({ev.items.length}x)
-                    </option>
-                  ))}
-                </select>
+                <div className="w-full sm:w-60">
+                  <BottomSheetSelect
+                    value={effectiveEventKey}
+                    onChange={(val) => {
+                      setSelectedEventKey(val);
+                      setActiveMeetIdx(null);
+                    }}
+                    title="Pilih Nomor Lomba"
+                    subtitle="Pilih semua nomor atau fokus pada satu nomor renang."
+                    icon={<Filter className="w-3.5 h-3.5" />}
+                    searchable={athleteEvents.length > 5}
+                    ariaLabel="Pilih nomor lomba atlet"
+                    options={[
+                      { value: '__ALL__', label: `Semua Nomor (${athleteEvents.length})` },
+                      ...athleteEvents.map((ev) => ({
+                        value: ev.key,
+                        label: ev.label,
+                        badge: `${ev.items.length}x`,
+                      })),
+                    ]}
+                  />
+                </div>
               )}
             </>
           ) : (
-            <select
-              value={effectiveCompareEvent?.key || ''}
-              onChange={(e) => {
-                setCompareEventKey(e.target.value);
-                setCompareAthleteIds([]);
-                setActiveCompareIdx(null);
-              }}
-              aria-label="Pilih nomor lomba perbandingan"
-              className="px-3 min-h-[40px] sm:min-h-[36px] text-xs border border-slate-200 rounded-lg bg-white text-slate-800 max-w-[260px]"
-            >
-              {clubEventGroups.map((g) => (
-                <option key={g.key} value={g.key}>
-                  {g.label} ({g.athleteIds.length} atlet)
-                </option>
-              ))}
-            </select>
+            <div className="w-full sm:w-64">
+              <BottomSheetSelect
+                value={effectiveCompareEvent?.key || ''}
+                onChange={(val) => {
+                  setCompareEventKey(val);
+                  setCompareAthleteIds([]);
+                  setActiveCompareIdx(null);
+                }}
+                title="Pilih Nomor Lomba Perbandingan"
+                subtitle="Bandingkan perkembangan catatan waktu antar atlet pada nomor yang sama."
+                icon={<Filter className="w-3.5 h-3.5" />}
+                searchable={clubEventGroups.length > 5}
+                ariaLabel="Pilih nomor lomba perbandingan"
+                options={clubEventGroups.map((g) => ({
+                  value: g.key,
+                  label: g.label,
+                  badge: `${g.athleteIds.length} atlet`,
+                }))}
+              />
+            </div>
           )}
         </div>
       </div>

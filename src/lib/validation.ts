@@ -376,4 +376,30 @@ export const LIMITS = {
     authorNameMin: entities.Announcement.properties.authorName.minLength ?? 2,
     authorNameMax: entities.Announcement.properties.authorName.maxLength ?? 80,
   },
+  coach: {
+    fullNameMin: entities.Coach.properties.fullName.minLength ?? 2,
+    fullNameMax: entities.Coach.properties.fullName.maxLength ?? 80,
+    specializationMax: entities.Coach.properties.specialization.maxLength ?? 100,
+    phoneMax: entities.Coach.properties.phone.maxLength ?? 25,
+    notesMax: entities.Coach.properties.notes.maxLength ?? 300,
+  },
+  pool: {
+    nameMin: entities.PoolFacility.properties.name.minLength ?? 2,
+    nameMax: entities.PoolFacility.properties.name.maxLength ?? 100,
+    addressMax: entities.PoolFacility.properties.address.maxLength ?? 160,
+    notesMax: entities.PoolFacility.properties.notes.maxLength ?? 300,
+  },
+  equipment: {
+    itemNameMin: entities.EquipmentItem.properties.itemName.minLength ?? 2,
+    itemNameMax: entities.EquipmentItem.properties.itemName.maxLength ?? 100,
+    locationMax: entities.EquipmentItem.properties.location.maxLength ?? 100,
+    notesMax: entities.EquipmentItem.properties.notes.maxLength ?? 300,
+  },
+  competition: {
+    nameMin: entities.Competition.properties.name.minLength ?? 2,
+    nameMax: entities.Competition.properties.name.maxLength ?? 120,
+    locationMin: entities.Competition.properties.location.minLength ?? 2,
+    locationMax: entities.Competition.properties.location.maxLength ?? 100,
+    notesMax: entities.Competition.properties.notes.maxLength ?? 300,
+  },
 };

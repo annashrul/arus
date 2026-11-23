@@ -34,15 +34,19 @@ import {
   AlertTriangle,
   ArrowDownLeft,
   ArrowUpRight,
+  Calendar,
   Edit3,
+  Filter,
   Plus,
   Printer,
   Search,
   Trash2,
+  User,
   X,
 } from 'lucide-react';
 import { CashflowTrendChart } from './TrendCharts';
 import { ExportActionMenu } from './ExportActionMenu';
+import { BottomSheetSelect } from './BottomSheetSelect';
 
 interface FinanceViewProps {
   club: ClubProfile;
@@ -81,6 +85,28 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Transfer Bank');
   const [referenceNo, setReferenceNo] = useState('');
   const [selectedAthleteId, setSelectedAthleteId] = useState('');
+
+  const monthOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const tx of transactions) {
+      if (tx.transactionDate && tx.transactionDate.length >= 7) {
+        set.add(tx.transactionDate.slice(0, 7));
+      }
+    }
+    const sorted = Array.from(set).sort((a, b) => b.localeCompare(a));
+    return [
+      { value: '', label: 'Semua Bulan', description: 'Tampilkan seluruh riwayat transaksi' },
+      ...sorted.map((ym) => {
+        const [y, m] = ym.split('-').map(Number);
+        const dt = new Date(y, m - 1, 1);
+        const label = new Intl.DateTimeFormat('id-ID', {
+          month: 'long',
+          year: 'numeric',
+        }).format(dt);
+        return { value: ym, label, badge: ym };
+      }),
+    ];
+  }, [transactions]);
 
   const filtered = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -455,34 +481,33 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
               className="w-full pl-9 pr-3 min-h-[44px] sm:min-h-[36px] text-sm sm:text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-sky-600"
             />
           </div>
-          <select
-            value={filterCategory}
-            onChange={(e) => setFilterCategory(e.target.value)}
-            className="w-full sm:w-auto px-3 min-h-[44px] sm:min-h-[36px] text-sm sm:text-xs border border-slate-200 rounded-lg bg-white text-slate-700 focus:outline-none focus:border-sky-600"
-          >
-            <option value="all">Semua Kategori</option>
-            {TRANSACTION_CATEGORIES.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-          <input
-            type="month"
-            value={monthFilter}
-            onChange={(e) => setMonthFilter(e.target.value)}
-            className="w-full sm:w-auto px-3 min-h-[44px] sm:min-h-[36px] text-sm sm:text-xs font-mono-tabular border border-slate-200 rounded-lg bg-white text-slate-700 focus:outline-none focus:border-sky-600"
-            aria-label="Filter bulan transaksi"
-          />
-          {monthFilter && (
-            <button
-              type="button"
-              onClick={() => setMonthFilter('')}
-              className="col-span-2 sm:col-span-1 text-xs text-sky-700 hover:underline cursor-pointer min-h-[36px]"
-            >
-              Reset Bulan
-            </button>
-          )}
+          <div className="w-full sm:w-48">
+            <BottomSheetSelect
+              value={filterCategory}
+              onChange={setFilterCategory}
+              title="Filter Pos Keuangan"
+              subtitle="Pilih kategori pemasukan atau pengeluaran."
+              triggerPrefix="Pos:"
+              icon={<Filter className="w-3.5 h-3.5" />}
+              resetValue="all"
+              options={[
+                { value: 'all', label: 'Semua Kategori' },
+                ...TRANSACTION_CATEGORIES.map((c) => ({ value: c, label: c })),
+              ]}
+            />
+          </div>
+          <div className="w-full sm:w-44">
+            <BottomSheetSelect
+              value={monthFilter}
+              onChange={setMonthFilter}
+              title="Filter Bulan Transaksi"
+              subtitle="Pilih periode bulan pencatatan kas."
+              triggerPrefix="Bulan:"
+              icon={<Calendar className="w-3.5 h-3.5" />}
+              resetValue=""
+              options={monthOptions}
+            />
+          </div>
         </div>
       </div>
 
@@ -734,22 +759,16 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">Kategori</label>
-                  <select
+                  <BottomSheetSelect
                     value={category}
-                    onChange={(e) => {
-                      setCategory(e.target.value as TransactionCategory);
+                    onChange={(val) => {
+                      setCategory(val as TransactionCategory);
                       clearFieldError('category');
                     }}
-                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg bg-white ${
-                      fieldErrors.category ? 'border-red-400' : 'border-slate-200'
-                    }`}
-                  >
-                    {TRANSACTION_CATEGORIES.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
+                    title="Pilih Kategori Transaksi"
+                    hasError={Boolean(fieldErrors.category)}
+                    options={TRANSACTION_CATEGORIES.map((c) => ({ value: c, label: c }))}
+                  />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">
@@ -823,22 +842,16 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                   <label className="block text-xs font-medium text-slate-700 mb-1">
                     Metode Pembayaran
                   </label>
-                  <select
+                  <BottomSheetSelect
                     value={paymentMethod}
-                    onChange={(e) => {
-                      setPaymentMethod(e.target.value as PaymentMethod);
+                    onChange={(val) => {
+                      setPaymentMethod(val as PaymentMethod);
                       clearFieldError('paymentMethod');
                     }}
-                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg bg-white ${
-                      fieldErrors.paymentMethod ? 'border-red-400' : 'border-slate-200'
-                    }`}
-                  >
-                    {PAYMENT_METHODS.map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))}
-                  </select>
+                    title="Pilih Metode Pembayaran"
+                    hasError={Boolean(fieldErrors.paymentMethod)}
+                    options={PAYMENT_METHODS.map((m) => ({ value: m, label: m }))}
+                  />
                 </div>
               </div>
 
@@ -847,18 +860,24 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                   <label className="block text-xs font-medium text-slate-700 mb-1">
                     Atlet Terkait (Opsional)
                   </label>
-                  <select
+                  <BottomSheetSelect
                     value={selectedAthleteId}
-                    onChange={(e) => setSelectedAthleteId(e.target.value)}
-                    className="w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border border-slate-200 rounded-lg bg-white"
-                  >
-                    <option value="">-- Tidak terkait atlet --</option>
-                    {athletes.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.fullName} ({a.ageGroup})
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setSelectedAthleteId}
+                    title="Pilih Atlet Terkait"
+                    subtitle="Opsional: tautkan transaksi ini ke atlet tertentu."
+                    icon={<User className="w-3.5 h-3.5" />}
+                    searchable={athletes.length > 5}
+                    resetValue=""
+                    resetLabel="Lepas"
+                    options={[
+                      { value: '', label: 'Tidak terkait atlet' },
+                      ...athletes.map((a) => ({
+                        value: a.id,
+                        label: a.fullName,
+                        badge: a.ageGroup,
+                      })),
+                    ]}
+                  />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">
