@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   addDoc,
   collection,
@@ -9,7 +9,15 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { clampString, isValidBlueprintDate, LIMITS } from '../lib/validation';
+import {
+  clampString,
+  FieldErrors,
+  isValidBankAccountFormat,
+  isValidBlueprintDate,
+  isValidEmailFormat,
+  isValidPhoneFormat,
+  LIMITS,
+} from '../lib/validation';
 import {
   ANNOUNCEMENT_TYPES,
   AnnouncementDocType,
@@ -24,12 +32,12 @@ import {
   INVOICE_CATEGORIES,
   INVOICE_STATUSES,
   InvoiceCategory,
-  InvoiceStatus,
   PAYMENT_METHODS,
   PaymentMethod,
   todayISO,
 } from '../types/club';
 import {
+  AlertTriangle,
   Building2,
   Check,
   CheckCircle2,
@@ -60,6 +68,9 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
   announcements,
 }) => {
   const [activeTab, setActiveTab] = useState<'invoices' | 'letters' | 'settings'>('invoices');
+  const [listError, setListError] = useState<string | null>(null);
+  const [confirmDeleteInvId, setConfirmDeleteInvId] = useState<string | null>(null);
+  const [confirmDeleteAnnId, setConfirmDeleteAnnId] = useState<string | null>(null);
 
   // Invoice filters
   const [invSearch, setInvSearch] = useState('');
@@ -75,6 +86,9 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
   const [invDueDate, setInvDueDate] = useState(todayISO());
   const [invNotes, setInvNotes] = useState('');
   const [invError, setInvError] = useState<string | null>(null);
+  const [invFieldErrors, setInvFieldErrors] = useState<
+    FieldErrors<'athleteId' | 'category' | 'period' | 'desc' | 'amount' | 'dueDate' | 'notes'>
+  >({});
   const [savingInv, setSavingInv] = useState(false);
 
   // Batch SPP Generator Modal
@@ -82,6 +96,7 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
   const [batchPeriod, setBatchPeriod] = useState(currentMonthLabel());
   const [batchDueDate, setBatchDueDate] = useState(todayISO());
   const [batchError, setBatchError] = useState<string | null>(null);
+  const [batchFieldErrors, setBatchFieldErrors] = useState<FieldErrors<'period' | 'dueDate'>>({});
   const [savingBatch, setSavingBatch] = useState(false);
 
   // Settle / Mark Paid Modal
@@ -89,6 +104,10 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
   const [payDate, setPayDate] = useState(todayISO());
   const [payMethod, setPayMethod] = useState<PaymentMethod>('Transfer Bank');
   const [payNotes, setPayNotes] = useState('');
+  const [payError, setPayError] = useState<string | null>(null);
+  const [payFieldErrors, setPayFieldErrors] = useState<
+    FieldErrors<'payDate' | 'payMethod' | 'payNotes'>
+  >({});
   const [paying, setPaying] = useState(false);
 
   // Preview / Print Invoice Modal
@@ -104,6 +123,9 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
   const [annAuthor, setAnnAuthor] = useState(club.headCoach);
   const [annContent, setAnnContent] = useState('');
   const [annError, setAnnError] = useState<string | null>(null);
+  const [annFieldErrors, setAnnFieldErrors] = useState<
+    FieldErrors<'title' | 'type' | 'date' | 'target' | 'author' | 'content'>
+  >({});
   const [savingAnn, setSavingAnn] = useState(false);
   const [previewAnn, setPreviewAnn] = useState<ClubAnnouncement | null>(null);
 
@@ -121,6 +143,24 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsSaved, setSettingsSaved] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [settingsFieldErrors, setSettingsFieldErrors] = useState<
+    FieldErrors<
+      'name' | 'city' | 'address' | 'coach' | 'fee' | 'phone' | 'email' | 'bankName' | 'bankNo' | 'bankHolder'
+    >
+  >({});
+
+  useEffect(() => {
+    setSName(club.name);
+    setSCity(club.city);
+    setSAddress(club.address || '');
+    setSCoach(club.headCoach);
+    setSPhone(club.phone || '');
+    setSEmail(club.email || '');
+    setSBankName(club.bankName || '');
+    setSBankNo(club.bankAccountNumber || '');
+    setSBankHolder(club.bankAccountHolder || '');
+    setSFee(String(club.defaultMonthlyFee));
+  }, [club]);
 
   const filteredInvoices = useMemo(() => {
     const q = invSearch.trim().toLowerCase();
@@ -148,6 +188,11 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
     return { paid, pending, overdue };
   }, [invoices]);
 
+  const activeZeroFeeAthletesCount = useMemo(
+    () => athletes.filter((a) => a.status === 'Aktif' && a.monthlyFee <= 0).length,
+    [athletes]
+  );
+
   const openCreateInvoice = () => {
     const firstAth = athletes[0];
     setInvAthleteId(firstAth?.id || '');
@@ -158,11 +203,13 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
     setInvDueDate(todayISO());
     setInvNotes('');
     setInvError(null);
+    setInvFieldErrors({});
     setCreateInvOpen(true);
   };
 
   const handleSelectInvAthlete = (id: string) => {
     setInvAthleteId(id);
+    setInvFieldErrors((prev) => ({ ...prev, athleteId: undefined }));
     const ath = athletes.find((a) => a.id === id);
     if (ath && invCategory === 'Iuran Bulanan (SPP)') {
       setInvAmount(String(ath.monthlyFee));
@@ -173,26 +220,57 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
   const handleCreateInvoice = async (e: React.FormEvent) => {
     e.preventDefault();
     setInvError(null);
+
+    const errors: FieldErrors<
+      'athleteId' | 'category' | 'period' | 'desc' | 'amount' | 'dueDate' | 'notes'
+    > = {};
+
     const ath = athletes.find((a) => a.id === invAthleteId);
     if (!ath) {
-      setInvError('Pilih atlet terlebih dahulu.');
-      return;
+      errors.athleteId = 'Pilih atlet yang valid terlebih dahulu.';
     }
-    const parsedAmount = Number(invAmount);
-    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0 || parsedAmount > 500000000) {
-      setInvError('Nominal tagihan tidak valid.');
-      return;
+
+    if (!INVOICE_CATEGORIES.includes(invCategory)) {
+      errors.category = 'Kategori tagihan tidak valid.';
     }
-    if (!isValidBlueprintDate(invDueDate)) {
-      setInvError('Tanggal jatuh tempo harus valid.');
-      return;
-    }
-    const cleanDesc = clampString(invDesc, LIMITS.invoice.descriptionMax);
+
     const cleanPeriod = clampString(invPeriod, LIMITS.invoice.periodMonthMax);
-    if (cleanDesc.length < 2 || cleanPeriod.length < 3) {
-      setInvError('Periode dan keterangan tagihan wajib diisi.');
+    if (cleanPeriod.length < LIMITS.invoice.periodMonthMin) {
+      errors.period = `Periode minimal ${LIMITS.invoice.periodMonthMin} karakter (contoh: Desember 2026).`;
+    }
+
+    const cleanDesc = clampString(invDesc, LIMITS.invoice.descriptionMax);
+    if (cleanDesc.length < LIMITS.invoice.descriptionMin) {
+      errors.desc = `Deskripsi rincian minimal ${LIMITS.invoice.descriptionMin} karakter.`;
+    }
+
+    const parsedAmount = Number(invAmount);
+    if (
+      invAmount.trim() === '' ||
+      !Number.isFinite(parsedAmount) ||
+      !Number.isInteger(parsedAmount) ||
+      parsedAmount <= 0 ||
+      parsedAmount > 500000000
+    ) {
+      errors.amount = 'Nominal tagihan harus berupa bilangan bulat Rp 1 hingga Rp 500.000.000.';
+    }
+
+    if (!invDueDate.trim() || !isValidBlueprintDate(invDueDate)) {
+      errors.dueDate = 'Tanggal jatuh tempo tidak valid.';
+    }
+
+    if (invNotes.trim().length > LIMITS.invoice.notesMax) {
+      errors.notes = `Catatan maksimal ${LIMITS.invoice.notesMax} karakter.`;
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setInvFieldErrors(errors);
+      setInvError(Object.values(errors)[0] || 'Periksa kembali rincian invoice.');
       return;
     }
+
+    if (!ath) return;
+    setInvFieldErrors({});
 
     const seq = String(invoices.length + 1).padStart(3, '0');
     const ym = invDueDate.slice(0, 7).replace('-', '/');
@@ -232,17 +310,29 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
     e.preventDefault();
     setBatchError(null);
 
+    const errors: FieldErrors<'period' | 'dueDate'> = {};
     const cleanPeriod = clampString(batchPeriod, LIMITS.invoice.periodMonthMax);
-    if (cleanPeriod.length < 3) {
-      setBatchError('Periode bulan minimal 3 karakter.');
-      return;
+    if (cleanPeriod.length < LIMITS.invoice.periodMonthMin) {
+      errors.period = `Periode bulan minimal ${LIMITS.invoice.periodMonthMin} karakter.`;
     }
-    if (!isValidBlueprintDate(batchDueDate)) {
-      setBatchError('Tanggal jatuh tempo tidak valid.');
+    if (!batchDueDate.trim() || !isValidBlueprintDate(batchDueDate)) {
+      errors.dueDate = 'Tanggal jatuh tempo tidak valid.';
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setBatchFieldErrors(errors);
+      setBatchError(Object.values(errors)[0] || 'Periksa kembali data tagihan massal.');
       return;
     }
 
-    const activeAthletes = athletes.filter((a) => a.status === 'Aktif' && a.monthlyFee > 0);
+    const activeBillableAthletes = athletes.filter((a) => a.status === 'Aktif' && a.monthlyFee > 0);
+    if (activeBillableAthletes.length === 0) {
+      setBatchError(
+        'Tidak ada atlet aktif dengan nominal iuran bulanan lebih dari Rp 0. Perbarui iuran pada data atlet terlebih dahulu.'
+      );
+      return;
+    }
+
     const alreadyBilledIds = new Set(
       invoices
         .filter(
@@ -253,15 +343,16 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
         )
         .map((i) => i.athleteId)
     );
-    const targets = activeAthletes.filter((a) => !alreadyBilledIds.has(a.id));
+    const targets = activeBillableAthletes.filter((a) => !alreadyBilledIds.has(a.id));
 
     if (targets.length === 0) {
       setBatchError(
-        `Semua atlet aktif (${activeAthletes.length} orang) sudah memiliki tagihan SPP untuk periode ${cleanPeriod}.`
+        `Semua atlet aktif (${activeBillableAthletes.length} orang) sudah memiliki tagihan SPP untuk periode ${cleanPeriod}.`
       );
       return;
     }
 
+    setBatchFieldErrors({});
     setSavingBatch(true);
     try {
       const batch = writeBatch(db);
@@ -306,8 +397,30 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
   const handleSettleInvoice = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!payModalInv) return;
-    if (!isValidBlueprintDate(payDate)) return;
+    setPayError(null);
 
+    const errors: FieldErrors<'payDate' | 'payMethod' | 'payNotes'> = {};
+    if (!payDate.trim() || !isValidBlueprintDate(payDate)) {
+      errors.payDate = 'Tanggal pembayaran tidak valid.';
+    } else if (payDate > todayISO()) {
+      errors.payDate = 'Tanggal pelunasan tidak boleh melebihi hari ini.';
+    }
+
+    if (!PAYMENT_METHODS.includes(payMethod)) {
+      errors.payMethod = 'Metode pembayaran tidak valid.';
+    }
+
+    if (payNotes.trim().length > LIMITS.invoice.notesMax) {
+      errors.payNotes = `Catatan maksimal ${LIMITS.invoice.notesMax} karakter.`;
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setPayFieldErrors(errors);
+      setPayError(Object.values(errors)[0] || 'Periksa kembali rincian pelunasan.');
+      return;
+    }
+
+    setPayFieldErrors({});
     setPaying(true);
     try {
       const batch = writeBatch(db);
@@ -354,27 +467,40 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
         handleFirestoreError(err, OperationType.WRITE, `invoices/${payModalInv.id}`)
       );
       setPayModalInv(null);
+    } catch (err) {
+      setPayError(err instanceof Error ? err.message : 'Gagal memproses pelunasan invoice.');
     } finally {
       setPaying(false);
     }
   };
 
   const handleMarkOverdue = async (inv: ClubInvoice) => {
+    setListError(null);
     try {
       await updateDoc(doc(db, 'invoices', inv.id), {
         status: 'Jatuh Tempo',
         updatedAt: serverTimestamp(),
       });
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `invoices/${inv.id}`);
+      try {
+        handleFirestoreError(err, OperationType.UPDATE, `invoices/${inv.id}`);
+      } catch (handled) {
+        setListError(handled instanceof Error ? handled.message : 'Gagal mengubah status invoice.');
+      }
     }
   };
 
   const handleDeleteInvoice = async (inv: ClubInvoice) => {
+    setListError(null);
     try {
       await deleteDoc(doc(db, 'invoices', inv.id));
+      setConfirmDeleteInvId(null);
     } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, `invoices/${inv.id}`);
+      try {
+        handleFirestoreError(err, OperationType.DELETE, `invoices/${inv.id}`);
+      } catch (handled) {
+        setListError(handled instanceof Error ? handled.message : 'Gagal menghapus invoice.');
+      }
     }
   };
 
@@ -425,19 +551,38 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
     e.preventDefault();
     setAnnError(null);
 
+    const errors: FieldErrors<'title' | 'type' | 'date' | 'target' | 'author' | 'content'> = {};
     const cleanTitle = clampString(annTitle, LIMITS.announcement.titleMax);
     const cleanContent = clampString(annContent, LIMITS.announcement.contentMax);
     const cleanAuthor = clampString(annAuthor, LIMITS.announcement.authorNameMax);
+    const cleanTarget = clampString(annTarget, LIMITS.announcement.targetGroupMax);
 
-    if (cleanTitle.length < 2 || cleanContent.length < 5 || cleanAuthor.length < 2) {
-      setAnnError('Judul, isi surat/pengumuman, dan penandatangan wajib diisi.');
+    if (cleanTitle.length < LIMITS.announcement.titleMin) {
+      errors.title = `Judul dokumen minimal ${LIMITS.announcement.titleMin} karakter.`;
+    }
+    if (!ANNOUNCEMENT_TYPES.includes(annType)) {
+      errors.type = 'Jenis dokumen tidak valid.';
+    }
+    if (annDate.trim() && !isValidBlueprintDate(annDate.trim())) {
+      errors.date = 'Format tanggal acara tidak valid.';
+    }
+    if (annTarget.trim().length > LIMITS.announcement.targetGroupMax) {
+      errors.target = `Sasaran kelompok maksimal ${LIMITS.announcement.targetGroupMax} karakter.`;
+    }
+    if (cleanAuthor.length < LIMITS.announcement.authorNameMin) {
+      errors.author = `Nama penandatangan minimal ${LIMITS.announcement.authorNameMin} karakter.`;
+    }
+    if (cleanContent.length < LIMITS.announcement.contentMin) {
+      errors.content = `Isi surat/pengumuman minimal ${LIMITS.announcement.contentMin} karakter.`;
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setAnnFieldErrors(errors);
+      setAnnError(Object.values(errors)[0] || 'Periksa kembali isi dokumen.');
       return;
     }
-    if (annDate && !isValidBlueprintDate(annDate)) {
-      setAnnError('Format tanggal kegiatan tidak valid.');
-      return;
-    }
 
+    setAnnFieldErrors({});
     setSavingAnn(true);
     try {
       await addDoc(collection(db, 'announcements'), {
@@ -445,8 +590,8 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
         ownerId: userId,
         title: cleanTitle,
         docType: annType,
-        eventDate: annDate || '',
-        targetGroup: clampString(annTarget, LIMITS.announcement.targetGroupMax),
+        eventDate: annDate.trim() || '',
+        targetGroup: cleanTarget,
         authorName: cleanAuthor,
         content: cleanContent,
         createdAt: serverTimestamp(),
@@ -463,10 +608,16 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
   };
 
   const handleDeleteAnnouncement = async (ann: ClubAnnouncement) => {
+    setListError(null);
     try {
       await deleteDoc(doc(db, 'announcements', ann.id));
+      setConfirmDeleteAnnId(null);
     } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, `announcements/${ann.id}`);
+      try {
+        handleFirestoreError(err, OperationType.DELETE, `announcements/${ann.id}`);
+      } catch (handled) {
+        setListError(handled instanceof Error ? handled.message : 'Gagal menghapus dokumen.');
+      }
     }
   };
 
@@ -475,32 +626,84 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
     setSettingsError(null);
     setSettingsSaved(false);
 
+    const errors: FieldErrors<
+      'name' | 'city' | 'address' | 'coach' | 'fee' | 'phone' | 'email' | 'bankName' | 'bankNo' | 'bankHolder'
+    > = {};
+
     const cleanName = clampString(sName, LIMITS.club.nameMax);
     const cleanCity = clampString(sCity, LIMITS.club.cityMax);
+    const cleanAddress = clampString(sAddress, LIMITS.club.addressMax);
     const cleanCoach = clampString(sCoach, LIMITS.club.headCoachMax);
+    const cleanPhone = clampString(sPhone, LIMITS.club.phoneMax);
+    const cleanEmail = clampString(sEmail, LIMITS.club.emailMax);
+    const cleanBankName = clampString(sBankName, LIMITS.club.bankNameMax);
+    const cleanBankNo = clampString(sBankNo, LIMITS.club.bankAccountNumberMax);
+    const cleanBankHolder = clampString(sBankHolder, LIMITS.club.bankAccountHolderMax);
     const parsedFee = Number(sFee);
 
-    if (cleanName.length < 2 || cleanCity.length < 2 || cleanCoach.length < 2) {
-      setSettingsError('Nama klub, kota, dan kepala pelatih minimal 2 karakter.');
-      return;
+    if (cleanName.length < LIMITS.club.nameMin) {
+      errors.name = `Nama klub minimal ${LIMITS.club.nameMin} karakter.`;
     }
-    if (!Number.isFinite(parsedFee) || parsedFee < 0 || parsedFee > 50000000) {
-      setSettingsError('Nominal iuran default tidak valid.');
+    if (cleanCity.length < LIMITS.club.cityMin) {
+      errors.city = `Kota klub minimal ${LIMITS.club.cityMin} karakter.`;
+    }
+    if (sAddress.trim().length > LIMITS.club.addressMax) {
+      errors.address = `Alamat maksimal ${LIMITS.club.addressMax} karakter.`;
+    }
+    if (cleanCoach.length < LIMITS.club.headCoachMin) {
+      errors.coach = `Nama kepala pelatih minimal ${LIMITS.club.headCoachMin} karakter.`;
+    }
+    if (
+      sFee.trim() === '' ||
+      !Number.isFinite(parsedFee) ||
+      !Number.isInteger(parsedFee) ||
+      parsedFee < 0 ||
+      parsedFee > 50000000
+    ) {
+      errors.fee = 'Iuran SPP default harus bilangan bulat antara Rp 0 hingga Rp 50.000.000.';
+    }
+    if (cleanPhone && !isValidPhoneFormat(cleanPhone)) {
+      errors.phone = 'Format nomor telepon/WhatsApp tidak valid (8–16 digit angka).';
+    }
+    if (cleanEmail && !isValidEmailFormat(cleanEmail)) {
+      errors.email = 'Format alamat email klub tidak valid.';
+    }
+    if (cleanBankNo && !isValidBankAccountFormat(cleanBankNo)) {
+      errors.bankNo = 'Nomor rekening hanya boleh berisi angka, spasi, atau tanda hubung (5–30 digit).';
+    }
+
+    const anyBankFilled = Boolean(cleanBankName || cleanBankNo || cleanBankHolder);
+    if (anyBankFilled) {
+      if (cleanBankName.length < 2) {
+        errors.bankName = 'Nama bank wajib diisi minimal 2 karakter jika rekening dicantumkan.';
+      }
+      if (!cleanBankNo) {
+        errors.bankNo = 'Nomor rekening wajib diisi jika informasi bank dicantumkan.';
+      }
+      if (cleanBankHolder.length < 2) {
+        errors.bankHolder = 'Nama pemilik rekening wajib diisi jika rekening dicantumkan.';
+      }
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setSettingsFieldErrors(errors);
+      setSettingsError(Object.values(errors)[0] || 'Periksa kembali pengaturan profil klub.');
       return;
     }
 
+    setSettingsFieldErrors({});
     setSavingSettings(true);
     try {
       await updateDoc(doc(db, 'clubs', club.id), {
         name: cleanName,
         city: cleanCity,
-        address: clampString(sAddress, LIMITS.club.addressMax),
+        address: cleanAddress,
         headCoach: cleanCoach,
-        phone: clampString(sPhone, LIMITS.club.phoneMax),
-        email: clampString(sEmail, LIMITS.club.emailMax),
-        bankName: clampString(sBankName, LIMITS.club.bankNameMax),
-        bankAccountNumber: clampString(sBankNo, LIMITS.club.bankAccountNumberMax),
-        bankAccountHolder: clampString(sBankHolder, LIMITS.club.bankAccountHolderMax),
+        phone: cleanPhone,
+        email: cleanEmail,
+        bankName: cleanBankName,
+        bankAccountNumber: cleanBankNo,
+        bankAccountHolder: cleanBankHolder,
         defaultMonthlyFee: Math.round(parsedFee),
         updatedAt: serverTimestamp(),
       }).catch((err) => handleFirestoreError(err, OperationType.UPDATE, `clubs/${club.id}`));
@@ -541,6 +744,7 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
               type="button"
               onClick={() => {
                 setBatchError(null);
+                setBatchFieldErrors({});
                 setBatchOpen(true);
               }}
               disabled={athletes.filter((a) => a.status === 'Aktif').length === 0}
@@ -566,6 +770,8 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
             type="button"
             onClick={() => {
               setAnnError(null);
+              setAnnFieldErrors({});
+              setAnnAuthor(club.headCoach);
               setAnnModalOpen(true);
             }}
             className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 whitespace-nowrap cursor-pointer shrink-0"
@@ -580,7 +786,12 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
       <div className="flex items-center gap-1 p-1 bg-slate-200/70 rounded-lg w-full sm:w-fit overflow-x-auto no-scrollbar no-print">
         <button
           type="button"
-          onClick={() => setActiveTab('invoices')}
+          onClick={() => {
+            setActiveTab('invoices');
+            setListError(null);
+            setConfirmDeleteInvId(null);
+            setConfirmDeleteAnnId(null);
+          }}
           className={`px-3.5 sm:px-4 min-h-[44px] sm:min-h-[36px] text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
             activeTab === 'invoices'
               ? 'bg-white text-slate-900 shadow-sm'
@@ -591,7 +802,12 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
         </button>
         <button
           type="button"
-          onClick={() => setActiveTab('letters')}
+          onClick={() => {
+            setActiveTab('letters');
+            setListError(null);
+            setConfirmDeleteInvId(null);
+            setConfirmDeleteAnnId(null);
+          }}
           className={`px-3.5 sm:px-4 min-h-[44px] sm:min-h-[36px] text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
             activeTab === 'letters'
               ? 'bg-white text-slate-900 shadow-sm'
@@ -602,7 +818,12 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
         </button>
         <button
           type="button"
-          onClick={() => setActiveTab('settings')}
+          onClick={() => {
+            setActiveTab('settings');
+            setListError(null);
+            setSettingsError(null);
+            setSettingsFieldErrors({});
+          }}
           className={`px-3.5 sm:px-4 min-h-[44px] sm:min-h-[36px] text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
             activeTab === 'settings'
               ? 'bg-white text-slate-900 shadow-sm'
@@ -612,6 +833,22 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
           Profil & Rekening
         </button>
       </div>
+
+      {listError && (
+        <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-xs text-red-800 flex items-center justify-between gap-2 no-print">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 shrink-0 text-red-600" />
+            <span>{listError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setListError(null)}
+            className="text-red-700 hover:text-red-900 font-semibold cursor-pointer"
+          >
+            Tutup
+          </button>
+        </div>
+      )}
 
       {activeTab === 'invoices' && (
         <div className="space-y-5 no-print">
@@ -738,6 +975,8 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                                 setPayDate(todayISO());
                                 setPayMethod('Transfer Bank');
                                 setPayNotes('');
+                                setPayError(null);
+                                setPayFieldErrors({});
                               }}
                               className="px-3 min-h-[40px] text-xs font-medium text-emerald-700 bg-emerald-50 rounded-lg cursor-pointer"
                             >
@@ -754,13 +993,32 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                           >
                             Cetak
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteInvoice(inv)}
-                            className="px-3 min-h-[40px] text-xs font-medium text-red-700 bg-red-50 rounded-lg cursor-pointer"
-                          >
-                            Hapus
-                          </button>
+                          {confirmDeleteInvId === inv.id ? (
+                            <div className="inline-flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteInvoice(inv)}
+                                className="px-2.5 min-h-[40px] text-xs font-semibold text-white bg-red-600 rounded-lg cursor-pointer"
+                              >
+                                Konfirmasi
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeleteInvId(null)}
+                                className="px-2.5 min-h-[40px] text-xs font-medium text-slate-600 bg-slate-100 rounded-lg cursor-pointer"
+                              >
+                                Batal
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteInvId(inv.id)}
+                              className="px-3 min-h-[40px] text-xs font-medium text-red-700 bg-red-50 rounded-lg cursor-pointer"
+                            >
+                              Hapus
+                            </button>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -828,6 +1086,8 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                                     setPayDate(todayISO());
                                     setPayMethod('Transfer Bank');
                                     setPayNotes('');
+                                    setPayError(null);
+                                    setPayFieldErrors({});
                                   }}
                                   className="px-2.5 py-1 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded cursor-pointer"
                                 >
@@ -855,14 +1115,33 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                               >
                                 <Printer className="w-4 h-4" />
                               </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteInvoice(inv)}
-                                className="p-1.5 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 cursor-pointer"
-                                title="Hapus invoice"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                              {confirmDeleteInvId === inv.id ? (
+                                <span className="inline-flex items-center gap-1 ml-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteInvoice(inv)}
+                                    className="px-2 py-1 text-[11px] font-semibold text-white bg-red-600 rounded hover:bg-red-700 cursor-pointer"
+                                  >
+                                    Hapus
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setConfirmDeleteInvId(null)}
+                                    className="px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-100 rounded cursor-pointer"
+                                  >
+                                    Batal
+                                  </button>
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmDeleteInvId(inv.id)}
+                                  className="p-1.5 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 cursor-pointer"
+                                  title="Hapus invoice"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -912,23 +1191,42 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                       Sasaran: {ann.targetGroup || 'Semua Kelompok'} · Oleh {ann.authorName}
                     </div>
                   </div>
-                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
                     <button
                       type="button"
                       onClick={() => setPreviewAnn(ann)}
-                      className="inline-flex items-center gap-1.5 text-xs font-medium text-sky-700 hover:text-sky-800 cursor-pointer"
+                      className="inline-flex items-center gap-1.5 min-h-[36px] text-xs font-medium text-sky-700 hover:text-sky-800 cursor-pointer"
                     >
                       <Printer className="w-3.5 h-3.5" />
                       Buka & Cetak Surat
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteAnnouncement(ann)}
-                      className="p-1.5 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 cursor-pointer"
-                      title="Hapus dokumen"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {confirmDeleteAnnId === ann.id ? (
+                      <div className="inline-flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteAnnouncement(ann)}
+                          className="px-2.5 py-1.5 text-xs font-semibold text-white bg-red-600 rounded-md hover:bg-red-700 cursor-pointer"
+                        >
+                          Hapus
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteAnnId(null)}
+                          className="px-2.5 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 rounded-md hover:bg-slate-200 cursor-pointer"
+                        >
+                          Batal
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteAnnId(ann.id)}
+                        className="p-2 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 cursor-pointer"
+                        title="Hapus dokumen"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -940,6 +1238,7 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
       {activeTab === 'settings' && (
         <form
           onSubmit={handleSaveSettings}
+          noValidate
           className="bg-white border border-slate-200 rounded-xl p-4 sm:p-6 max-w-2xl space-y-5 no-print"
         >
           <div className="flex items-center gap-3 pb-4 border-b border-slate-200">
@@ -955,8 +1254,9 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
           </div>
 
           {settingsError && (
-            <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-xs text-red-800">
-              {settingsError}
+            <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-xs text-red-800 flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
+              <span>{settingsError}</span>
             </div>
           )}
           {settingsSaved && (
@@ -968,26 +1268,44 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Nama Klub</label>
+              <label className="block text-xs font-medium text-slate-700 mb-1">
+                Nama Klub <span className="text-red-600">*</span>
+              </label>
               <input
                 type="text"
-                required
                 maxLength={LIMITS.club.nameMax}
                 value={sName}
-                onChange={(e) => setSName(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
+                onChange={(e) => {
+                  setSName(e.target.value);
+                  setSettingsFieldErrors((p) => ({ ...p, name: undefined }));
+                }}
+                className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg ${
+                  settingsFieldErrors.name ? 'border-red-400 bg-red-50/40' : 'border-slate-200'
+                }`}
               />
+              {settingsFieldErrors.name && (
+                <p className="text-[11px] text-red-600 mt-1">{settingsFieldErrors.name}</p>
+              )}
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Kota</label>
+              <label className="block text-xs font-medium text-slate-700 mb-1">
+                Kota <span className="text-red-600">*</span>
+              </label>
               <input
                 type="text"
-                required
                 maxLength={LIMITS.club.cityMax}
                 value={sCity}
-                onChange={(e) => setSCity(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
+                onChange={(e) => {
+                  setSCity(e.target.value);
+                  setSettingsFieldErrors((p) => ({ ...p, city: undefined }));
+                }}
+                className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg ${
+                  settingsFieldErrors.city ? 'border-red-400 bg-red-50/40' : 'border-slate-200'
+                }`}
               />
+              {settingsFieldErrors.city && (
+                <p className="text-[11px] text-red-600 mt-1">{settingsFieldErrors.city}</p>
+              )}
             </div>
           </div>
 
@@ -999,38 +1317,61 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
               type="text"
               maxLength={LIMITS.club.addressMax}
               value={sAddress}
-              onChange={(e) => setSAddress(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
+              onChange={(e) => {
+                setSAddress(e.target.value);
+                setSettingsFieldErrors((p) => ({ ...p, address: undefined }));
+              }}
+              className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg ${
+                settingsFieldErrors.address ? 'border-red-400 bg-red-50/40' : 'border-slate-200'
+              }`}
             />
+            {settingsFieldErrors.address && (
+              <p className="text-[11px] text-red-600 mt-1">{settingsFieldErrors.address}</p>
+            )}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-medium text-slate-700 mb-1">
-                Kepala Pelatih
+                Kepala Pelatih <span className="text-red-600">*</span>
               </label>
               <input
                 type="text"
-                required
                 maxLength={LIMITS.club.headCoachMax}
                 value={sCoach}
-                onChange={(e) => setSCoach(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
+                onChange={(e) => {
+                  setSCoach(e.target.value);
+                  setSettingsFieldErrors((p) => ({ ...p, coach: undefined }));
+                }}
+                className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg ${
+                  settingsFieldErrors.coach ? 'border-red-400 bg-red-50/40' : 'border-slate-200'
+                }`}
               />
+              {settingsFieldErrors.coach && (
+                <p className="text-[11px] text-red-600 mt-1">{settingsFieldErrors.coach}</p>
+              )}
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-700 mb-1">
-                Iuran SPP Default (Rp)
+                Iuran SPP Default (Rp) <span className="text-red-600">*</span>
               </label>
               <input
                 type="number"
-                required
                 min={0}
                 max={50000000}
+                step={1000}
                 value={sFee}
-                onChange={(e) => setSFee(e.target.value)}
-                className="w-full px-3 py-2 text-sm font-mono-tabular border border-slate-200 rounded-lg"
+                onChange={(e) => {
+                  setSFee(e.target.value);
+                  setSettingsFieldErrors((p) => ({ ...p, fee: undefined }));
+                }}
+                className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm font-mono-tabular border rounded-lg ${
+                  settingsFieldErrors.fee ? 'border-red-400 bg-red-50/40' : 'border-slate-200'
+                }`}
               />
+              {settingsFieldErrors.fee && (
+                <p className="text-[11px] text-red-600 mt-1">{settingsFieldErrors.fee}</p>
+              )}
             </div>
           </div>
 
@@ -1040,12 +1381,21 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                 Telepon / WhatsApp Admin
               </label>
               <input
-                type="text"
+                type="tel"
                 maxLength={LIMITS.club.phoneMax}
                 value={sPhone}
-                onChange={(e) => setSPhone(e.target.value)}
-                className="w-full px-3 py-2 text-sm font-mono-tabular border border-slate-200 rounded-lg"
+                onChange={(e) => {
+                  setSPhone(e.target.value);
+                  setSettingsFieldErrors((p) => ({ ...p, phone: undefined }));
+                }}
+                placeholder="0812-3456-7890"
+                className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm font-mono-tabular border rounded-lg ${
+                  settingsFieldErrors.phone ? 'border-red-400 bg-red-50/40' : 'border-slate-200'
+                }`}
               />
+              {settingsFieldErrors.phone && (
+                <p className="text-[11px] text-red-600 mt-1">{settingsFieldErrors.phone}</p>
+              )}
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-700 mb-1">Email Klub</label>
@@ -1053,16 +1403,30 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                 type="email"
                 maxLength={LIMITS.club.emailMax}
                 value={sEmail}
-                onChange={(e) => setSEmail(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
+                onChange={(e) => {
+                  setSEmail(e.target.value);
+                  setSettingsFieldErrors((p) => ({ ...p, email: undefined }));
+                }}
+                placeholder="admin@klubrenang.id"
+                className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg ${
+                  settingsFieldErrors.email ? 'border-red-400 bg-red-50/40' : 'border-slate-200'
+                }`}
               />
+              {settingsFieldErrors.email && (
+                <p className="text-[11px] text-red-600 mt-1">{settingsFieldErrors.email}</p>
+              )}
             </div>
           </div>
 
           <div className="pt-4 border-t border-slate-200 space-y-4">
-            <h3 className="text-xs font-semibold text-slate-800">
-              Informasi Rekening Transfer Resmi
-            </h3>
+            <div>
+              <h3 className="text-xs font-semibold text-slate-800">
+                Informasi Rekening Transfer Resmi
+              </h3>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Jika mencantumkan rekening, lengkapi Nama Bank, Nomor Rekening, dan Atas Nama.
+              </p>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1">Nama Bank</label>
@@ -1070,10 +1434,18 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                   type="text"
                   maxLength={LIMITS.club.bankNameMax}
                   value={sBankName}
-                  onChange={(e) => setSBankName(e.target.value)}
+                  onChange={(e) => {
+                    setSBankName(e.target.value);
+                    setSettingsFieldErrors((p) => ({ ...p, bankName: undefined }));
+                  }}
                   placeholder="Bank Mandiri"
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
+                  className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg ${
+                    settingsFieldErrors.bankName ? 'border-red-400 bg-red-50/40' : 'border-slate-200'
+                  }`}
                 />
+                {settingsFieldErrors.bankName && (
+                  <p className="text-[11px] text-red-600 mt-1">{settingsFieldErrors.bankName}</p>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1">
@@ -1083,9 +1455,18 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                   type="text"
                   maxLength={LIMITS.club.bankAccountNumberMax}
                   value={sBankNo}
-                  onChange={(e) => setSBankNo(e.target.value)}
-                  className="w-full px-3 py-2 text-sm font-mono-tabular border border-slate-200 rounded-lg"
+                  onChange={(e) => {
+                    setSBankNo(e.target.value);
+                    setSettingsFieldErrors((p) => ({ ...p, bankNo: undefined }));
+                  }}
+                  placeholder="130-00-1234567-8"
+                  className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm font-mono-tabular border rounded-lg ${
+                    settingsFieldErrors.bankNo ? 'border-red-400 bg-red-50/40' : 'border-slate-200'
+                  }`}
                 />
+                {settingsFieldErrors.bankNo && (
+                  <p className="text-[11px] text-red-600 mt-1">{settingsFieldErrors.bankNo}</p>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1">Atas Nama</label>
@@ -1093,9 +1474,18 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                   type="text"
                   maxLength={LIMITS.club.bankAccountHolderMax}
                   value={sBankHolder}
-                  onChange={(e) => setSBankHolder(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
+                  onChange={(e) => {
+                    setSBankHolder(e.target.value);
+                    setSettingsFieldErrors((p) => ({ ...p, bankHolder: undefined }));
+                  }}
+                  placeholder="Yayasan / Klub"
+                  className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg ${
+                    settingsFieldErrors.bankHolder ? 'border-red-400 bg-red-50/40' : 'border-slate-200'
+                  }`}
                 />
+                {settingsFieldErrors.bankHolder && (
+                  <p className="text-[11px] text-red-600 mt-1">{settingsFieldErrors.bankHolder}</p>
+                )}
               </div>
             </div>
           </div>
@@ -1131,19 +1521,24 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleCreateInvoice} className="mt-5 space-y-4">
+            <form onSubmit={handleCreateInvoice} noValidate className="mt-5 space-y-4">
               {invError && (
-                <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-xs text-red-800">
-                  {invError}
+                <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-xs text-red-800 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
+                  <span>{invError}</span>
                 </div>
               )}
 
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Atlet</label>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Atlet <span className="text-red-600">*</span>
+                </label>
                 <select
                   value={invAthleteId}
                   onChange={(e) => handleSelectInvAthlete(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white"
+                  className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg bg-white ${
+                    invFieldErrors.athleteId ? 'border-red-400 bg-red-50/40' : 'border-slate-200'
+                  }`}
                 >
                   {athletes.map((a) => (
                     <option key={a.id} value={a.id}>
@@ -1151,17 +1546,25 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                     </option>
                   ))}
                 </select>
+                {invFieldErrors.athleteId && (
+                  <p className="text-[11px] text-red-600 mt-1">{invFieldErrors.athleteId}</p>
+                )}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">
-                    Kategori Tagihan
+                    Kategori Tagihan <span className="text-red-600">*</span>
                   </label>
                   <select
                     value={invCategory}
-                    onChange={(e) => setInvCategory(e.target.value as InvoiceCategory)}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white"
+                    onChange={(e) => {
+                      setInvCategory(e.target.value as InvoiceCategory);
+                      setInvFieldErrors((p) => ({ ...p, category: undefined }));
+                    }}
+                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg bg-white ${
+                      invFieldErrors.category ? 'border-red-400 bg-red-50/40' : 'border-slate-200'
+                    }`}
                   >
                     {INVOICE_CATEGORIES.map((c) => (
                       <option key={c} value={c}>
@@ -1169,62 +1572,94 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                       </option>
                     ))}
                   </select>
+                  {invFieldErrors.category && (
+                    <p className="text-[11px] text-red-600 mt-1">{invFieldErrors.category}</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">
-                    Periode / Bulan
+                    Periode / Bulan <span className="text-red-600">*</span>
                   </label>
                   <input
                     type="text"
-                    required
                     maxLength={LIMITS.invoice.periodMonthMax}
                     value={invPeriod}
-                    onChange={(e) => setInvPeriod(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
+                    onChange={(e) => {
+                      setInvPeriod(e.target.value);
+                      setInvFieldErrors((p) => ({ ...p, period: undefined }));
+                    }}
+                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg ${
+                      invFieldErrors.period ? 'border-red-400 bg-red-50/40' : 'border-slate-200'
+                    }`}
                   />
+                  {invFieldErrors.period && (
+                    <p className="text-[11px] text-red-600 mt-1">{invFieldErrors.period}</p>
+                  )}
                 </div>
               </div>
 
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Deskripsi Rincian Tagihan
+                  Deskripsi Rincian Tagihan <span className="text-red-600">*</span>
                 </label>
                 <input
                   type="text"
-                  required
                   maxLength={LIMITS.invoice.descriptionMax}
                   value={invDesc}
-                  onChange={(e) => setInvDesc(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
+                  onChange={(e) => {
+                    setInvDesc(e.target.value);
+                    setInvFieldErrors((p) => ({ ...p, desc: undefined }));
+                  }}
+                  className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg ${
+                    invFieldErrors.desc ? 'border-red-400 bg-red-50/40' : 'border-slate-200'
+                  }`}
                 />
+                {invFieldErrors.desc && (
+                  <p className="text-[11px] text-red-600 mt-1">{invFieldErrors.desc}</p>
+                )}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">
-                    Nominal (Rp)
+                    Nominal (Rp) <span className="text-red-600">*</span>
                   </label>
                   <input
                     type="number"
-                    required
                     min={1}
                     max={500000000}
+                    step={1000}
                     value={invAmount}
-                    onChange={(e) => setInvAmount(e.target.value)}
-                    className="w-full px-3 py-2 text-sm font-mono-tabular border border-slate-200 rounded-lg"
+                    onChange={(e) => {
+                      setInvAmount(e.target.value);
+                      setInvFieldErrors((p) => ({ ...p, amount: undefined }));
+                    }}
+                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm font-mono-tabular border rounded-lg ${
+                      invFieldErrors.amount ? 'border-red-400 bg-red-50/40' : 'border-slate-200'
+                    }`}
                   />
+                  {invFieldErrors.amount && (
+                    <p className="text-[11px] text-red-600 mt-1">{invFieldErrors.amount}</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">
-                    Batas Jatuh Tempo
+                    Batas Jatuh Tempo <span className="text-red-600">*</span>
                   </label>
                   <input
                     type="date"
-                    required
                     value={invDueDate}
-                    onChange={(e) => setInvDueDate(e.target.value)}
-                    className="w-full px-3 py-2 text-sm font-mono-tabular border border-slate-200 rounded-lg"
+                    onChange={(e) => {
+                      setInvDueDate(e.target.value);
+                      setInvFieldErrors((p) => ({ ...p, dueDate: undefined }));
+                    }}
+                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm font-mono-tabular border rounded-lg ${
+                      invFieldErrors.dueDate ? 'border-red-400 bg-red-50/40' : 'border-slate-200'
+                    }`}
                   />
+                  {invFieldErrors.dueDate && (
+                    <p className="text-[11px] text-red-600 mt-1">{invFieldErrors.dueDate}</p>
+                  )}
                 </div>
               </div>
 
@@ -1236,9 +1671,17 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                   type="text"
                   maxLength={LIMITS.invoice.notesMax}
                   value={invNotes}
-                  onChange={(e) => setInvNotes(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
+                  onChange={(e) => {
+                    setInvNotes(e.target.value);
+                    setInvFieldErrors((p) => ({ ...p, notes: undefined }));
+                  }}
+                  className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg ${
+                    invFieldErrors.notes ? 'border-red-400 bg-red-50/40' : 'border-slate-200'
+                  }`}
                 />
+                {invFieldErrors.notes && (
+                  <p className="text-[11px] text-red-600 mt-1">{invFieldErrors.notes}</p>
+                )}
               </div>
 
               <div className="pt-4 border-t border-slate-200 grid grid-cols-2 sm:flex sm:justify-end gap-2.5">
@@ -1281,42 +1724,66 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleBatchGenerateSPP} className="mt-5 space-y-4">
+            <form onSubmit={handleBatchGenerateSPP} noValidate className="mt-5 space-y-4">
               <p className="text-xs text-slate-600 leading-relaxed">
-                Sistem akan otomatis menerbitkan invoice SPP bulanan untuk seluruh atlet berstatus <strong>Aktif</strong> yang belum memiliki tagihan pada periode ini.
+                Sistem akan otomatis menerbitkan invoice SPP bulanan untuk seluruh atlet berstatus <strong>Aktif</strong> yang memiliki tarif iuran lebih dari Rp 0 dan belum ditagih pada periode ini.
               </p>
 
+              {activeZeroFeeAthletesCount > 0 && (
+                <div className="p-3 rounded-lg border border-amber-200 bg-amber-50 text-xs text-amber-800 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+                  <span>
+                    Terdapat {activeZeroFeeAthletesCount} atlet aktif dengan tarif SPP Rp 0 (beasiswa/bebas iuran) yang otomatis dilewati.
+                  </span>
+                </div>
+              )}
+
               {batchError && (
-                <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-xs text-red-800">
-                  {batchError}
+                <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-xs text-red-800 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
+                  <span>{batchError}</span>
                 </div>
               )}
 
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Periode Tagihan (Contoh: Desember 2026)
+                  Periode Tagihan (Contoh: Desember 2026) <span className="text-red-600">*</span>
                 </label>
                 <input
                   type="text"
-                  required
                   maxLength={LIMITS.invoice.periodMonthMax}
                   value={batchPeriod}
-                  onChange={(e) => setBatchPeriod(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
+                  onChange={(e) => {
+                    setBatchPeriod(e.target.value);
+                    setBatchFieldErrors((p) => ({ ...p, period: undefined }));
+                  }}
+                  className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg ${
+                    batchFieldErrors.period ? 'border-red-400 bg-red-50/40' : 'border-slate-200'
+                  }`}
                 />
+                {batchFieldErrors.period && (
+                  <p className="text-[11px] text-red-600 mt-1">{batchFieldErrors.period}</p>
+                )}
               </div>
 
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Tanggal Jatuh Tempo
+                  Tanggal Jatuh Tempo <span className="text-red-600">*</span>
                 </label>
                 <input
                   type="date"
-                  required
                   value={batchDueDate}
-                  onChange={(e) => setBatchDueDate(e.target.value)}
-                  className="w-full px-3 py-2 text-sm font-mono-tabular border border-slate-200 rounded-lg"
+                  onChange={(e) => {
+                    setBatchDueDate(e.target.value);
+                    setBatchFieldErrors((p) => ({ ...p, dueDate: undefined }));
+                  }}
+                  className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm font-mono-tabular border rounded-lg ${
+                    batchFieldErrors.dueDate ? 'border-red-400 bg-red-50/40' : 'border-slate-200'
+                  }`}
                 />
+                {batchFieldErrors.dueDate && (
+                  <p className="text-[11px] text-red-600 mt-1">{batchFieldErrors.dueDate}</p>
+                )}
               </div>
 
               <div className="pt-4 border-t border-slate-200 grid grid-cols-2 sm:flex sm:justify-end gap-2.5">
@@ -1359,7 +1826,14 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleSettleInvoice} className="mt-5 space-y-4">
+            <form onSubmit={handleSettleInvoice} noValidate className="mt-5 space-y-4">
+              {payError && (
+                <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-xs text-red-800 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
+                  <span>{payError}</span>
+                </div>
+              )}
+
               <div className="p-3.5 rounded-lg bg-slate-50 border border-slate-200 text-xs space-y-1">
                 <div className="font-mono-tabular font-semibold text-slate-800">
                   {payModalInv.invoiceNumber}
@@ -1377,27 +1851,40 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                 <strong>{formatRupiah(payModalInv.amount)}</strong> ke Catatan Keuangan Klub.
               </p>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">
-                    Tanggal Bayar
+                    Tanggal Bayar <span className="text-red-600">*</span>
                   </label>
                   <input
                     type="date"
-                    required
+                    max={todayISO()}
                     value={payDate}
-                    onChange={(e) => setPayDate(e.target.value)}
-                    className="w-full px-3 py-2 text-sm font-mono-tabular border border-slate-200 rounded-lg"
+                    onChange={(e) => {
+                      setPayDate(e.target.value);
+                      setPayFieldErrors((p) => ({ ...p, payDate: undefined }));
+                    }}
+                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm font-mono-tabular border rounded-lg ${
+                      payFieldErrors.payDate ? 'border-red-400 bg-red-50/40' : 'border-slate-200'
+                    }`}
                   />
+                  {payFieldErrors.payDate && (
+                    <p className="text-[11px] text-red-600 mt-1">{payFieldErrors.payDate}</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">
-                    Metode Bayar
+                    Metode Bayar <span className="text-red-600">*</span>
                   </label>
                   <select
                     value={payMethod}
-                    onChange={(e) => setPayMethod(e.target.value as PaymentMethod)}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white"
+                    onChange={(e) => {
+                      setPayMethod(e.target.value as PaymentMethod);
+                      setPayFieldErrors((p) => ({ ...p, payMethod: undefined }));
+                    }}
+                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg bg-white ${
+                      payFieldErrors.payMethod ? 'border-red-400 bg-red-50/40' : 'border-slate-200'
+                    }`}
                   >
                     {PAYMENT_METHODS.map((m) => (
                       <option key={m} value={m}>
@@ -1405,6 +1892,9 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                       </option>
                     ))}
                   </select>
+                  {payFieldErrors.payMethod && (
+                    <p className="text-[11px] text-red-600 mt-1">{payFieldErrors.payMethod}</p>
+                  )}
                 </div>
               </div>
 
@@ -1416,10 +1906,18 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                   type="text"
                   maxLength={LIMITS.invoice.notesMax}
                   value={payNotes}
-                  onChange={(e) => setPayNotes(e.target.value)}
+                  onChange={(e) => {
+                    setPayNotes(e.target.value);
+                    setPayFieldErrors((p) => ({ ...p, payNotes: undefined }));
+                  }}
                   placeholder="Contoh: Diterima via transfer Mandiri"
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
+                  className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg ${
+                    payFieldErrors.payNotes ? 'border-red-400 bg-red-50/40' : 'border-slate-200'
+                  }`}
                 />
+                {payFieldErrors.payNotes && (
+                  <p className="text-[11px] text-red-600 mt-1">{payFieldErrors.payNotes}</p>
+                )}
               </div>
 
               <div className="pt-4 border-t border-slate-200 grid grid-cols-2 sm:flex sm:justify-end gap-2.5">
@@ -1609,37 +2107,50 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleCreateAnnouncement} className="mt-5 space-y-4">
+            <form onSubmit={handleCreateAnnouncement} noValidate className="mt-5 space-y-4">
               {annError && (
-                <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-xs text-red-800">
-                  {annError}
+                <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-xs text-red-800 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
+                  <span>{annError}</span>
                 </div>
               )}
 
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Judul Dokumen
+                  Judul Dokumen <span className="text-red-600">*</span>
                 </label>
                 <input
                   type="text"
-                  required
                   maxLength={LIMITS.announcement.titleMax}
                   value={annTitle}
-                  onChange={(e) => setAnnTitle(e.target.value)}
+                  onChange={(e) => {
+                    setAnnTitle(e.target.value);
+                    setAnnFieldErrors((p) => ({ ...p, title: undefined }));
+                  }}
                   placeholder="Contoh: Surat Tugas Kejuaraan Daerah 2026"
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
+                  className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg ${
+                    annFieldErrors.title ? 'border-red-400 bg-red-50/40' : 'border-slate-200'
+                  }`}
                 />
+                {annFieldErrors.title && (
+                  <p className="text-[11px] text-red-600 mt-1">{annFieldErrors.title}</p>
+                )}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">
-                    Jenis Dokumen
+                    Jenis Dokumen <span className="text-red-600">*</span>
                   </label>
                   <select
                     value={annType}
-                    onChange={(e) => setAnnType(e.target.value as AnnouncementDocType)}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white"
+                    onChange={(e) => {
+                      setAnnType(e.target.value as AnnouncementDocType);
+                      setAnnFieldErrors((p) => ({ ...p, type: undefined }));
+                    }}
+                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg bg-white ${
+                      annFieldErrors.type ? 'border-red-400 bg-red-50/40' : 'border-slate-200'
+                    }`}
                   >
                     {ANNOUNCEMENT_TYPES.map((t) => (
                       <option key={t} value={t}>
@@ -1647,6 +2158,9 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                       </option>
                     ))}
                   </select>
+                  {annFieldErrors.type && (
+                    <p className="text-[11px] text-red-600 mt-1">{annFieldErrors.type}</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">
@@ -1655,9 +2169,17 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                   <input
                     type="date"
                     value={annDate}
-                    onChange={(e) => setAnnDate(e.target.value)}
-                    className="w-full px-3 py-2 text-sm font-mono-tabular border border-slate-200 rounded-lg"
+                    onChange={(e) => {
+                      setAnnDate(e.target.value);
+                      setAnnFieldErrors((p) => ({ ...p, date: undefined }));
+                    }}
+                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm font-mono-tabular border rounded-lg ${
+                      annFieldErrors.date ? 'border-red-400 bg-red-50/40' : 'border-slate-200'
+                    }`}
                   />
+                  {annFieldErrors.date && (
+                    <p className="text-[11px] text-red-600 mt-1">{annFieldErrors.date}</p>
+                  )}
                 </div>
               </div>
 
@@ -1670,37 +2192,64 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                     type="text"
                     maxLength={LIMITS.announcement.targetGroupMax}
                     value={annTarget}
-                    onChange={(e) => setAnnTarget(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
+                    onChange={(e) => {
+                      setAnnTarget(e.target.value);
+                      setAnnFieldErrors((p) => ({ ...p, target: undefined }));
+                    }}
+                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg ${
+                      annFieldErrors.target ? 'border-red-400 bg-red-50/40' : 'border-slate-200'
+                    }`}
                   />
+                  {annFieldErrors.target && (
+                    <p className="text-[11px] text-red-600 mt-1">{annFieldErrors.target}</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">
-                    Penandatangan
+                    Penandatangan <span className="text-red-600">*</span>
                   </label>
                   <input
                     type="text"
-                    required
                     maxLength={LIMITS.announcement.authorNameMax}
                     value={annAuthor}
-                    onChange={(e) => setAnnAuthor(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
+                    onChange={(e) => {
+                      setAnnAuthor(e.target.value);
+                      setAnnFieldErrors((p) => ({ ...p, author: undefined }));
+                    }}
+                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg ${
+                      annFieldErrors.author ? 'border-red-400 bg-red-50/40' : 'border-slate-200'
+                    }`}
                   />
+                  {annFieldErrors.author && (
+                    <p className="text-[11px] text-red-600 mt-1">{annFieldErrors.author}</p>
+                  )}
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Isi Surat / Pengumuman
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-medium text-slate-700">
+                    Isi Surat / Pengumuman <span className="text-red-600">*</span>
+                  </label>
+                  <span className="text-[11px] text-slate-400 font-mono-tabular">
+                    {annContent.length}/{LIMITS.announcement.contentMax}
+                  </span>
+                </div>
                 <textarea
                   rows={6}
-                  required
                   maxLength={LIMITS.announcement.contentMax}
                   value={annContent}
-                  onChange={(e) => setAnnContent(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
+                  onChange={(e) => {
+                    setAnnContent(e.target.value);
+                    setAnnFieldErrors((p) => ({ ...p, content: undefined }));
+                  }}
+                  className={`w-full px-3 py-2 text-base sm:text-sm border rounded-lg ${
+                    annFieldErrors.content ? 'border-red-400 bg-red-50/40' : 'border-slate-200'
+                  }`}
                 />
+                {annFieldErrors.content && (
+                  <p className="text-[11px] text-red-600 mt-1">{annFieldErrors.content}</p>
+                )}
               </div>
 
               <div className="pt-4 border-t border-slate-200 grid grid-cols-2 sm:flex sm:justify-end gap-2.5">

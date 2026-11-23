@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { signInWithPopup, User } from 'firebase/auth';
 import { auth, googleProvider } from '../lib/firebase';
 import { createClubAndSeedData } from '../lib/seedSampleClub';
-import { ArrowRight, CheckCircle2, Loader2, ShieldCheck } from 'lucide-react';
+import { clampString, FieldErrors, LIMITS } from '../lib/validation';
+import { AlertTriangle, ArrowRight, CheckCircle2, Loader2, ShieldCheck } from 'lucide-react';
 
 interface ClubOnboardingProps {
   user: User | null;
@@ -20,6 +21,17 @@ export const ClubOnboarding: React.FC<ClubOnboardingProps> = ({ user, onClubCrea
   const [withSample, setWithSample] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors<string>>({});
+
+  const clearFieldError = (key: string) => {
+    if (fieldErrors[key]) {
+      setFieldErrors((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    }
+  };
 
   const handleGoogleLogin = async () => {
     setAuthError(null);
@@ -27,8 +39,17 @@ export const ClubOnboarding: React.FC<ClubOnboardingProps> = ({ user, onClubCrea
     try {
       await signInWithPopup(auth, googleProvider);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Gagal masuk dengan Google.';
-      setAuthError(msg);
+      const code = (err as { code?: string })?.code || '';
+      if (code === 'auth/popup-closed-by-user') {
+        setAuthError('Jendela login Google ditutup sebelum selesai. Silakan coba lagi.');
+      } else if (code === 'auth/popup-blocked') {
+        setAuthError('Popup diblokir oleh browser. Izinkan popup untuk melanjutkan login Google.');
+      } else if (code === 'auth/unauthorized-domain') {
+        setAuthError('Domain aplikasi belum terdaftar di Authorized Domains Firebase Authentication.');
+      } else {
+        const msg = err instanceof Error ? err.message : 'Gagal masuk dengan Google.';
+        setAuthError(msg);
+      }
     } finally {
       setSigningIn(false);
     }
@@ -39,31 +60,45 @@ export const ClubOnboarding: React.FC<ClubOnboardingProps> = ({ user, onClubCrea
     if (!user) return;
     setFormError(null);
 
+    const errors: FieldErrors<string> = {};
+    const cleanName = clampString(clubName, LIMITS.club.nameMax);
+    const cleanCity = clampString(city, LIMITS.club.cityMax);
+    const cleanCoach = clampString(headCoach, LIMITS.club.headCoachMax);
     const parsedFee = Number(defaultFee);
-    if (clubName.trim().length < 2) {
-      setFormError('Nama klub minimal 2 karakter.');
+
+    if (cleanName.length < LIMITS.club.nameMin) {
+      errors.clubName = `Nama klub minimal ${LIMITS.club.nameMin} karakter.`;
+    }
+    if (cleanCity.length < LIMITS.club.cityMin) {
+      errors.city = `Kota/Kabupaten minimal ${LIMITS.club.cityMin} karakter.`;
+    }
+    if (cleanCoach.length < LIMITS.club.headCoachMin) {
+      errors.headCoach = `Nama kepala pelatih minimal ${LIMITS.club.headCoachMin} karakter.`;
+    }
+    if (
+      defaultFee.trim() === '' ||
+      !Number.isFinite(parsedFee) ||
+      !Number.isInteger(parsedFee) ||
+      parsedFee < 0 ||
+      parsedFee > 50000000
+    ) {
+      errors.defaultFee = 'Nominal iuran harus bilangan bulat antara Rp 0 hingga Rp 50.000.000.';
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      setFormError(Object.values(errors)[0] || 'Periksa kembali kolom profil klub.');
       return;
     }
-    if (city.trim().length < 2) {
-      setFormError('Kota/Kabupaten minimal 2 karakter.');
-      return;
-    }
-    if (headCoach.trim().length < 2) {
-      setFormError('Nama kepala pelatih minimal 2 karakter.');
-      return;
-    }
-    if (!Number.isFinite(parsedFee) || parsedFee < 0) {
-      setFormError('Nominal iuran bulanan tidak valid.');
-      return;
-    }
+    setFieldErrors({});
 
     setSubmitting(true);
     try {
       await createClubAndSeedData(user.uid, {
-        clubName,
-        city,
-        headCoach,
-        defaultMonthlyFee: parsedFee,
+        clubName: cleanName,
+        city: cleanCity,
+        headCoach: cleanCoach,
+        defaultMonthlyFee: Math.round(parsedFee),
         withSampleData: withSample,
       });
       onClubCreated();
@@ -169,7 +204,7 @@ export const ClubOnboarding: React.FC<ClubOnboardingProps> = ({ user, onClubCrea
             </div>
           </div>
         ) : (
-          <form onSubmit={handleCreateClub} className="w-full max-w-md space-y-5 sm:space-y-6 pt-1 sm:pt-0">
+          <form onSubmit={handleCreateClub} noValidate className="w-full max-w-md space-y-5 sm:space-y-6 pt-1 sm:pt-0">
             <div className="space-y-1.5">
               <p className="text-xs text-slate-500 truncate">
                 Masuk sebagai {user.email}
@@ -183,71 +218,100 @@ export const ClubOnboarding: React.FC<ClubOnboardingProps> = ({ user, onClubCrea
             </div>
 
             {formError && (
-              <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-xs text-red-800">
-                {formError}
+              <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-xs text-red-800 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                <span>{formError}</span>
               </div>
             )}
 
             <div className="space-y-4">
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1.5">
-                  Nama Klub Renang
+                  Nama Klub Renang <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
-                  required
-                  maxLength={100}
+                  maxLength={LIMITS.club.nameMax}
                   value={clubName}
-                  onChange={(e) => setClubName(e.target.value)}
-                  className="w-full px-3.5 min-h-[44px] text-base sm:text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-600/20 focus:border-sky-600"
+                  onChange={(e) => {
+                    setClubName(e.target.value);
+                    clearFieldError('clubName');
+                  }}
+                  className={`w-full px-3.5 min-h-[44px] text-base sm:text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-600/20 focus:border-sky-600 ${
+                    fieldErrors.clubName ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
+                  }`}
                   placeholder="Contoh: Tirta Kencana Aquatics"
                 />
+                {fieldErrors.clubName && (
+                  <p className="mt-1 text-xs text-red-600">{fieldErrors.clubName}</p>
+                )}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1.5">
-                    Kota / Domisili
+                    Kota / Domisili <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
-                    required
-                    maxLength={60}
+                    maxLength={LIMITS.club.cityMax}
                     value={city}
-                    onChange={(e) => setCity(e.target.value)}
-                    className="w-full px-3.5 min-h-[44px] text-base sm:text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-600/20 focus:border-sky-600"
+                    onChange={(e) => {
+                      setCity(e.target.value);
+                      clearFieldError('city');
+                    }}
+                    className={`w-full px-3.5 min-h-[44px] text-base sm:text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-600/20 focus:border-sky-600 ${
+                      fieldErrors.city ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
+                    }`}
                     placeholder="Bandung"
                   />
+                  {fieldErrors.city && (
+                    <p className="mt-1 text-xs text-red-600">{fieldErrors.city}</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1.5">
-                    Iuran SPP Default (Rp)
+                    Iuran SPP Default (Rp) <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="number"
-                    required
                     min={0}
                     max={50000000}
                     value={defaultFee}
-                    onChange={(e) => setDefaultFee(e.target.value)}
-                    className="w-full px-3.5 min-h-[44px] text-base sm:text-sm font-mono-tabular border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-600/20 focus:border-sky-600"
+                    onChange={(e) => {
+                      setDefaultFee(e.target.value);
+                      clearFieldError('defaultFee');
+                    }}
+                    className={`w-full px-3.5 min-h-[44px] text-base sm:text-sm font-mono-tabular border rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-600/20 focus:border-sky-600 ${
+                      fieldErrors.defaultFee ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
+                    }`}
                   />
+                  {fieldErrors.defaultFee && (
+                    <p className="mt-1 text-xs text-red-600">{fieldErrors.defaultFee}</p>
+                  )}
                 </div>
               </div>
 
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1.5">
-                  Nama Kepala Pelatih
+                  Nama Kepala Pelatih <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
-                  required
-                  maxLength={80}
+                  maxLength={LIMITS.club.headCoachMax}
                   value={headCoach}
-                  onChange={(e) => setHeadCoach(e.target.value)}
-                  className="w-full px-3.5 min-h-[44px] text-base sm:text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-600/20 focus:border-sky-600"
+                  onChange={(e) => {
+                    setHeadCoach(e.target.value);
+                    clearFieldError('headCoach');
+                  }}
+                  className={`w-full px-3.5 min-h-[44px] text-base sm:text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-600/20 focus:border-sky-600 ${
+                    fieldErrors.headCoach ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
+                  }`}
                   placeholder="Coach Hendra Wijaya"
                 />
+                {fieldErrors.headCoach && (
+                  <p className="mt-1 text-xs text-red-600">{fieldErrors.headCoach}</p>
+                )}
               </div>
 
               <label className="flex items-start gap-3 p-3.5 rounded-xl border border-slate-200 bg-slate-50 cursor-pointer min-h-[44px]">

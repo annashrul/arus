@@ -8,7 +8,13 @@ import {
   updateDoc,
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { clampString, isValidBlueprintDate, LIMITS } from '../lib/validation';
+import {
+  clampString,
+  FieldErrors,
+  isValidBlueprintDate,
+  isValidReferenceNoFormat,
+  LIMITS,
+} from '../lib/validation';
 import {
   Athlete,
   ClubProfile,
@@ -24,6 +30,7 @@ import {
   TransactionType,
 } from '../types/club';
 import {
+  AlertTriangle,
   ArrowDownLeft,
   ArrowUpRight,
   Download,
@@ -57,6 +64,9 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
   const [editingTx, setEditingTx] = useState<FinanceTransaction | null>(null);
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors<string>>({});
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
 
   // Form fields
   const [type, setType] = useState<TransactionType>('pemasukan');
@@ -109,6 +119,16 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
     };
   }, [filtered]);
 
+  const clearFieldError = (key: string) => {
+    if (fieldErrors[key]) {
+      setFieldErrors((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    }
+  };
+
   const openCreateModal = (defaultType: TransactionType = 'pemasukan') => {
     setEditingTx(null);
     setType(defaultType);
@@ -120,6 +140,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
     setReferenceNo('');
     setSelectedAthleteId('');
     setErrorMsg(null);
+    setFieldErrors({});
     setModalOpen(true);
   };
 
@@ -134,6 +155,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
     setReferenceNo(tx.referenceNo || '');
     setSelectedAthleteId(tx.athleteId || '');
     setErrorMsg(null);
+    setFieldErrors({});
     setModalOpen(true);
   };
 
@@ -141,20 +163,44 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
     e.preventDefault();
     setErrorMsg(null);
 
+    const errors: FieldErrors<string> = {};
     const parsedAmount = Number(amount);
     const cleanDesc = clampString(description, LIMITS.transaction.descriptionMax);
-    if (cleanDesc.length < 2) {
-      setErrorMsg('Keterangan transaksi minimal 2 karakter.');
-      return;
-    }
-    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0 || parsedAmount > 1000000000) {
-      setErrorMsg('Nominal harus lebih dari 0 dan maksimal Rp 1.000.000.000.');
-      return;
+    const cleanRef = clampString(referenceNo, LIMITS.transaction.referenceNoMax);
+
+    if (!TRANSACTION_CATEGORIES.includes(category)) {
+      errors.category = 'Kategori transaksi tidak valid.';
     }
     if (!isValidBlueprintDate(transactionDate)) {
-      setErrorMsg('Format tanggal harus YYYY-MM-DD.');
+      errors.transactionDate = 'Tanggal transaksi tidak valid (harus YYYY-MM-DD).';
+    } else if (transactionDate > todayISO()) {
+      errors.transactionDate = 'Tanggal transaksi kas tidak boleh melebihi hari ini.';
+    }
+    if (cleanDesc.length < LIMITS.transaction.descriptionMin) {
+      errors.description = `Keterangan transaksi minimal ${LIMITS.transaction.descriptionMin} karakter.`;
+    }
+    if (
+      amount.trim() === '' ||
+      !Number.isFinite(parsedAmount) ||
+      !Number.isInteger(parsedAmount) ||
+      parsedAmount <= 0 ||
+      parsedAmount > 1000000000
+    ) {
+      errors.amount = 'Nominal harus bilangan bulat antara Rp 1 hingga Rp 1.000.000.000.';
+    }
+    if (!PAYMENT_METHODS.includes(paymentMethod)) {
+      errors.paymentMethod = 'Metode pembayaran tidak valid.';
+    }
+    if (cleanRef && !isValidReferenceNoFormat(cleanRef)) {
+      errors.referenceNo = 'Nomor referensi hanya boleh berisi huruf, angka, spasi, titik, garis miring, atau tanda hubung.';
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      setErrorMsg(Object.values(errors)[0] || 'Periksa kembali kolom transaksi yang ditandai merah.');
       return;
     }
+    setFieldErrors({});
 
     const athleteObj = athletes.find((a) => a.id === selectedAthleteId);
 
@@ -167,7 +213,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
         amount: Math.round(parsedAmount),
         transactionDate,
         paymentMethod,
-        referenceNo: clampString(referenceNo, LIMITS.transaction.referenceNoMax),
+        referenceNo: cleanRef,
         athleteId: athleteObj ? athleteObj.id : '',
         athleteName: athleteObj ? clampString(athleteObj.fullName, LIMITS.transaction.athleteNameMax) : '',
       };
@@ -205,10 +251,13 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
   };
 
   const handleDelete = async (tx: FinanceTransaction) => {
+    setListError(null);
     const path = `transactions/${tx.id}`;
     try {
       await deleteDoc(doc(db, 'transactions', tx.id));
+      setConfirmDeleteId(null);
     } catch (err) {
+      setListError(err instanceof Error ? err.message : 'Gagal menghapus transaksi.');
       handleFirestoreError(err, OperationType.DELETE, path);
     }
   };
@@ -406,6 +455,12 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
         </div>
       </div>
 
+      {listError && (
+        <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-xs text-red-800">
+          {listError}
+        </div>
+      )}
+
       {/* Transactions Ledger Table */}
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
         {filtered.length === 0 ? (
@@ -458,20 +513,41 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                       {tx.referenceNo || '-'}
                     </span>
                     <div className="inline-flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => openEditModal(tx)}
-                        className="px-3 min-h-[40px] text-xs font-medium text-slate-700 bg-slate-100 rounded-lg cursor-pointer"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(tx)}
-                        className="px-3 min-h-[40px] text-xs font-medium text-red-700 bg-red-50 rounded-lg cursor-pointer"
-                      >
-                        Hapus
-                      </button>
+                      {confirmDeleteId === tx.id ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(tx)}
+                            className="px-3 min-h-[40px] text-xs font-semibold text-white bg-red-600 rounded-lg cursor-pointer"
+                          >
+                            Konfirmasi
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteId(null)}
+                            className="px-3 min-h-[40px] text-xs font-medium text-slate-700 bg-slate-100 rounded-lg cursor-pointer"
+                          >
+                            Batal
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => openEditModal(tx)}
+                            className="px-3 min-h-[40px] text-xs font-medium text-slate-700 bg-slate-100 rounded-lg cursor-pointer"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteId(tx.id)}
+                            className="px-3 min-h-[40px] text-xs font-medium text-red-700 bg-red-50 rounded-lg cursor-pointer"
+                          >
+                            Hapus
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -524,22 +600,43 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                       </td>
                       <td className="py-3 px-4 text-right whitespace-nowrap">
                         <div className="inline-flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => openEditModal(tx)}
-                            className="p-1.5 text-slate-500 hover:text-slate-900 rounded hover:bg-slate-100 cursor-pointer"
-                            title="Edit transaksi"
-                          >
-                            <Edit3 className="w-4 h-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(tx)}
-                            className="p-1.5 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 cursor-pointer"
-                            title="Hapus transaksi"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          {confirmDeleteId === tx.id ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleDelete(tx)}
+                                className="px-2 py-1 text-[11px] font-semibold text-white bg-red-600 rounded hover:bg-red-700 cursor-pointer"
+                              >
+                                Hapus
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeleteId(null)}
+                                className="px-2 py-1 text-[11px] font-medium text-slate-600 bg-slate-100 rounded hover:bg-slate-200 cursor-pointer"
+                              >
+                                Batal
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => openEditModal(tx)}
+                                className="p-1.5 text-slate-500 hover:text-slate-900 rounded hover:bg-slate-100 cursor-pointer"
+                                title="Edit transaksi"
+                              >
+                                <Edit3 className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeleteId(tx.id)}
+                                className="p-1.5 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 cursor-pointer"
+                                title="Hapus transaksi"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -570,10 +667,11 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleSave} className="mt-5 space-y-4">
+            <form onSubmit={handleSave} noValidate className="mt-5 space-y-4">
               {errorMsg && (
-                <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-xs text-red-800">
-                  {errorMsg}
+                <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-xs text-red-800 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                  <span>{errorMsg}</span>
                 </div>
               )}
 
@@ -581,7 +679,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setType('pemasukan')}
-                  className={`py-2 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
+                  className={`min-h-[40px] sm:min-h-[34px] text-xs font-semibold rounded-md transition-colors cursor-pointer ${
                     type === 'pemasukan'
                       ? 'bg-white text-emerald-700 shadow-sm'
                       : 'text-slate-600'
@@ -592,7 +690,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setType('pengeluaran')}
-                  className={`py-2 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
+                  className={`min-h-[40px] sm:min-h-[34px] text-xs font-semibold rounded-md transition-colors cursor-pointer ${
                     type === 'pengeluaran'
                       ? 'bg-white text-red-700 shadow-sm'
                       : 'text-slate-600'
@@ -607,8 +705,13 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                   <label className="block text-xs font-medium text-slate-700 mb-1">Kategori</label>
                   <select
                     value={category}
-                    onChange={(e) => setCategory(e.target.value as TransactionCategory)}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white"
+                    onChange={(e) => {
+                      setCategory(e.target.value as TransactionCategory);
+                      clearFieldError('category');
+                    }}
+                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg bg-white ${
+                      fieldErrors.category ? 'border-red-400' : 'border-slate-200'
+                    }`}
                   >
                     {TRANSACTION_CATEGORIES.map((c) => (
                       <option key={c} value={c}>
@@ -618,47 +721,72 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">Tanggal</label>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">
+                    Tanggal <span className="text-red-500">*</span>
+                  </label>
                   <input
                     type="date"
-                    required
+                    max={todayISO()}
                     value={transactionDate}
-                    onChange={(e) => setTransactionDate(e.target.value)}
-                    className="w-full px-3 py-2 text-sm font-mono-tabular border border-slate-200 rounded-lg"
+                    onChange={(e) => {
+                      setTransactionDate(e.target.value);
+                      clearFieldError('transactionDate');
+                    }}
+                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm font-mono-tabular border rounded-lg ${
+                      fieldErrors.transactionDate ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
+                    }`}
                   />
+                  {fieldErrors.transactionDate && (
+                    <p className="mt-1 text-xs text-red-600">{fieldErrors.transactionDate}</p>
+                  )}
                 </div>
               </div>
 
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Keterangan Transaksi
+                  Keterangan Transaksi <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
-                  required
                   maxLength={LIMITS.transaction.descriptionMax}
                   value={description}
-                  onChange={(e) => setDescription(e.target.value)}
+                  onChange={(e) => {
+                    setDescription(e.target.value);
+                    clearFieldError('description');
+                  }}
                   placeholder="Contoh: Sewa lintasan kolam bulan Desember"
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
+                  className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg ${
+                    fieldErrors.description ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
+                  }`}
                 />
+                {fieldErrors.description && (
+                  <p className="mt-1 text-xs text-red-600">{fieldErrors.description}</p>
+                )}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">
-                    Nominal (Rp)
+                    Nominal (Rp) <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="number"
-                    required
                     min={1}
                     max={1000000000}
+                    step={1}
                     value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
+                    onChange={(e) => {
+                      setAmount(e.target.value);
+                      clearFieldError('amount');
+                    }}
                     placeholder="450000"
-                    className="w-full px-3 py-2 text-sm font-mono-tabular border border-slate-200 rounded-lg"
+                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm font-mono-tabular border rounded-lg ${
+                      fieldErrors.amount ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
+                    }`}
                   />
+                  {fieldErrors.amount && (
+                    <p className="mt-1 text-xs text-red-600">{fieldErrors.amount}</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">
@@ -666,8 +794,13 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                   </label>
                   <select
                     value={paymentMethod}
-                    onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white"
+                    onChange={(e) => {
+                      setPaymentMethod(e.target.value as PaymentMethod);
+                      clearFieldError('paymentMethod');
+                    }}
+                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg bg-white ${
+                      fieldErrors.paymentMethod ? 'border-red-400' : 'border-slate-200'
+                    }`}
                   >
                     {PAYMENT_METHODS.map((m) => (
                       <option key={m} value={m}>
@@ -686,7 +819,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                   <select
                     value={selectedAthleteId}
                     onChange={(e) => setSelectedAthleteId(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white"
+                    className="w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border border-slate-200 rounded-lg bg-white"
                   >
                     <option value="">-- Tidak terkait atlet --</option>
                     {athletes.map((a) => (
@@ -704,10 +837,18 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                     type="text"
                     maxLength={LIMITS.transaction.referenceNoMax}
                     value={referenceNo}
-                    onChange={(e) => setReferenceNo(e.target.value)}
+                    onChange={(e) => {
+                      setReferenceNo(e.target.value);
+                      clearFieldError('referenceNo');
+                    }}
                     placeholder="TRF-202611-01"
-                    className="w-full px-3 py-2 text-sm font-mono-tabular border border-slate-200 rounded-lg"
+                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm font-mono-tabular border rounded-lg ${
+                      fieldErrors.referenceNo ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
+                    }`}
                   />
+                  {fieldErrors.referenceNo && (
+                    <p className="mt-1 text-xs text-red-600">{fieldErrors.referenceNo}</p>
+                  )}
                 </div>
               </div>
 

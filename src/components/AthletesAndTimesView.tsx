@@ -9,7 +9,14 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { clampString, isValidBlueprintDate, LIMITS } from '../lib/validation';
+import {
+  clampString,
+  FieldErrors,
+  isValidBlueprintDate,
+  isValidPhoneFormat,
+  LIMITS,
+  normalizeTextKey,
+} from '../lib/validation';
 import {
   AGE_GROUPS,
   AgeGroup,
@@ -34,6 +41,7 @@ import {
   todayISO,
 } from '../types/club';
 import {
+  AlertTriangle,
   Award,
   CheckCircle2,
   Download,
@@ -79,6 +87,9 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
 
   // Selected athlete detail drawer
   const [detailAthlete, setDetailAthlete] = useState<Athlete | null>(null);
+  const [confirmDeleteAthleteId, setConfirmDeleteAthleteId] = useState<string | null>(null);
+  const [confirmDeleteTimeId, setConfirmDeleteTimeId] = useState<string | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
 
   // Athlete modal state
   const [athleteModalOpen, setAthleteModalOpen] = useState(false);
@@ -95,6 +106,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
   const [joinDate, setJoinDate] = useState(todayISO());
   const [athleteNotes, setAthleteNotes] = useState('');
   const [athleteError, setAthleteError] = useState<string | null>(null);
+  const [athleteFieldErrors, setAthleteFieldErrors] = useState<FieldErrors<string>>({});
   const [savingAthlete, setSavingAthlete] = useState(false);
 
   // SwimTime modal state
@@ -112,6 +124,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
   const [stIsPB, setStIsPB] = useState(true);
   const [stNotes, setStNotes] = useState('');
   const [timeError, setTimeError] = useState<string | null>(null);
+  const [timeFieldErrors, setTimeFieldErrors] = useState<FieldErrors<string>>({});
   const [savingTime, setSavingTime] = useState(false);
 
   const filteredAthletes = useMemo(() => {
@@ -155,6 +168,26 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
     return map;
   }, [swimTimes]);
 
+  const clearAthleteError = (key: string) => {
+    if (athleteFieldErrors[key]) {
+      setAthleteFieldErrors((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    }
+  };
+
+  const clearTimeError = (key: string) => {
+    if (timeFieldErrors[key]) {
+      setTimeFieldErrors((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    }
+  };
+
   const openCreateAthlete = () => {
     setEditingAthlete(null);
     setFullName('');
@@ -169,6 +202,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
     setJoinDate(todayISO());
     setAthleteNotes('');
     setAthleteError(null);
+    setAthleteFieldErrors({});
     setAthleteModalOpen(true);
   };
 
@@ -186,6 +220,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
     setJoinDate(ath.joinDate);
     setAthleteNotes(ath.notes || '');
     setAthleteError(null);
+    setAthleteFieldErrors({});
     setAthleteModalOpen(true);
   };
 
@@ -193,21 +228,81 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
     e.preventDefault();
     setAthleteError(null);
 
+    const errors: FieldErrors<string> = {};
     const cleanName = clampString(fullName, LIMITS.athlete.fullNameMax);
+    const cleanParentName = clampString(parentName, LIMITS.athlete.parentNameMax);
+    const cleanParentPhone = clampString(parentPhone, LIMITS.athlete.parentPhoneMax);
+    const cleanCoach = clampString(coachName, LIMITS.athlete.coachNameMax);
     const parsedFee = Number(monthlyFee);
+    const today = todayISO();
 
-    if (cleanName.length < 2) {
-      setAthleteError('Nama lengkap atlet minimal 2 karakter.');
+    if (cleanName.length < LIMITS.athlete.fullNameMin) {
+      errors.fullName = `Nama lengkap atlet minimal ${LIMITS.athlete.fullNameMin} karakter.`;
+    } else if (!/[a-zA-Z]/.test(cleanName)) {
+      errors.fullName = 'Nama atlet harus mengandung huruf.';
+    }
+
+    if (!isValidBlueprintDate(birthDate)) {
+      errors.birthDate = 'Tanggal lahir harus berformat YYYY-MM-DD yang valid.';
+    } else if (birthDate >= today) {
+      errors.birthDate = 'Tanggal lahir harus lebih awal dari hari ini.';
+    } else {
+      const birthYear = Number(birthDate.slice(0, 4));
+      const currentYear = Number(today.slice(0, 4));
+      const approxAge = currentYear - birthYear;
+      if (approxAge < 3 || approxAge > 80) {
+        errors.birthDate = 'Usia atlet harus berada di rentang 3 hingga 80 tahun.';
+      }
+    }
+
+    if (!isValidBlueprintDate(joinDate)) {
+      errors.joinDate = 'Tanggal bergabung harus berformat YYYY-MM-DD yang valid.';
+    } else {
+      if (joinDate > today) {
+        errors.joinDate = 'Tanggal bergabung tidak boleh melebihi hari ini.';
+      } else if (isValidBlueprintDate(birthDate) && joinDate <= birthDate) {
+        errors.joinDate = 'Tanggal bergabung harus lebih akhir dari tanggal lahir.';
+      }
+    }
+
+    if (cleanParentName && cleanParentName.length < 2) {
+      errors.parentName = 'Nama wali minimal 2 karakter jika diisi.';
+    }
+    if (cleanParentPhone && !isValidPhoneFormat(cleanParentPhone)) {
+      errors.parentPhone = 'Nomor WhatsApp wali harus berisi 8–16 digit angka yang valid.';
+    }
+    if (cleanCoach && cleanCoach.length < 2) {
+      errors.coachName = 'Nama pelatih minimal 2 karakter jika diisi.';
+    }
+
+    if (
+      monthlyFee.trim() === '' ||
+      !Number.isFinite(parsedFee) ||
+      !Number.isInteger(parsedFee) ||
+      parsedFee < 0 ||
+      parsedFee > 50000000
+    ) {
+      errors.monthlyFee = 'Nominal SPP harus bilangan bulat antara Rp 0 hingga Rp 50.000.000.';
+    }
+
+    if (!errors.fullName && !errors.birthDate) {
+      const dup = athletes.find(
+        (a) =>
+          a.id !== editingAthlete?.id &&
+          normalizeTextKey(a.fullName) === normalizeTextKey(cleanName) &&
+          a.birthDate === birthDate
+      );
+      if (dup) {
+        errors.fullName = `Atlet "${dup.fullName}" dengan tanggal lahir yang sama sudah terdaftar.`;
+      }
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setAthleteFieldErrors(errors);
+      setAthleteError(Object.values(errors)[0] || 'Periksa kembali data atlet yang ditandai merah.');
       return;
     }
-    if (!isValidBlueprintDate(birthDate) || !isValidBlueprintDate(joinDate)) {
-      setAthleteError('Tanggal lahir dan tanggal bergabung harus valid.');
-      return;
-    }
-    if (!Number.isFinite(parsedFee) || parsedFee < 0 || parsedFee > 50000000) {
-      setAthleteError('Nominal iuran bulanan tidak valid.');
-      return;
-    }
+    setAthleteFieldErrors({});
 
     setSavingAthlete(true);
     try {
@@ -217,9 +312,9 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
         birthDate,
         ageGroup,
         status,
-        parentName: clampString(parentName, LIMITS.athlete.parentNameMax),
-        parentPhone: clampString(parentPhone, LIMITS.athlete.parentPhoneMax),
-        coachName: clampString(coachName, LIMITS.athlete.coachNameMax),
+        parentName: cleanParentName,
+        parentPhone: cleanParentPhone,
+        coachName: cleanCoach,
         monthlyFee: Math.round(parsedFee),
         joinDate,
         notes: clampString(athleteNotes, LIMITS.athlete.notesMax),
@@ -248,10 +343,13 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
   };
 
   const handleDeleteAthlete = async (ath: Athlete) => {
+    setListError(null);
     try {
       await deleteDoc(doc(db, 'athletes', ath.id));
       if (detailAthlete?.id === ath.id) setDetailAthlete(null);
+      setConfirmDeleteAthleteId(null);
     } catch (err) {
+      setListError(err instanceof Error ? err.message : 'Gagal menghapus data atlet.');
       handleFirestoreError(err, OperationType.DELETE, `athletes/${ath.id}`);
     }
   };
@@ -270,6 +368,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
     setStIsPB(true);
     setStNotes('');
     setTimeError(null);
+    setTimeFieldErrors({});
     setTimeModalOpen(true);
   };
 
@@ -287,37 +386,71 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
     setStIsPB(st.isPersonalBest);
     setStNotes(st.notes || '');
     setTimeError(null);
+    setTimeFieldErrors({});
     setTimeModalOpen(true);
   };
+
+  const liveParsedTimePreview = useMemo(() => {
+    const ms = parseSwimTimeToMs(stTimeInput);
+    if (!ms || ms <= 0 || ms > 7200000) return null;
+    return formatSwimTimeMs(ms);
+  }, [stTimeInput]);
 
   const handleSaveTime = async (e: React.FormEvent) => {
     e.preventDefault();
     setTimeError(null);
 
+    const errors: FieldErrors<string> = {};
     const athleteObj = athletes.find((a) => a.id === stAthleteId);
     if (!athleteObj) {
-      setTimeError('Pilih atlet terlebih dahulu.');
-      return;
+      errors.athleteId = 'Pilih atlet terlebih dahulu.';
     }
 
     const timeMs = parseSwimTimeToMs(stTimeInput);
     if (!timeMs || timeMs <= 0 || timeMs > 7200000) {
-      setTimeError('Format waktu tidak valid. Gunakan mm:ss.cc (misal 01:02.45) atau ss.cc (misal 28.45).');
-      return;
+      errors.timeInput =
+        'Format waktu tidak valid. Gunakan mm:ss.cc (contoh 01:02.45) atau ss.cc (contoh 28.45), maksimal 2 jam.';
     }
 
     const cleanChamp = clampString(stChampionship, LIMITS.swimTime.championshipNameMax);
-    if (cleanChamp.length < 2) {
-      setTimeError('Nama kejuaraan minimal 2 karakter.');
-      return;
+    if (cleanChamp.length < LIMITS.swimTime.championshipNameMin) {
+      errors.championshipName = `Nama kejuaraan minimal ${LIMITS.swimTime.championshipNameMin} karakter.`;
     }
 
     if (!isValidBlueprintDate(stMeetDate)) {
-      setTimeError('Tanggal kejuaraan tidak valid.');
-      return;
+      errors.meetDate = 'Tanggal kejuaraan tidak valid (harus YYYY-MM-DD).';
+    } else if (stMeetDate > todayISO()) {
+      errors.meetDate = 'Tanggal kejuaraan tidak boleh melebihi hari ini.';
+    } else if (athleteObj && isValidBlueprintDate(athleteObj.birthDate) && stMeetDate <= athleteObj.birthDate) {
+      errors.meetDate = 'Tanggal kejuaraan harus lebih akhir dari tanggal lahir atlet.';
     }
 
     const eventName = `${stDistance}m ${stStroke}`;
+
+    if (athleteObj && timeMs && !errors.championshipName && !errors.meetDate) {
+      const dupTime = swimTimes.find(
+        (t) =>
+          t.id !== editingTime?.id &&
+          t.athleteId === athleteObj.id &&
+          t.eventName === eventName &&
+          t.poolCourse === stPoolCourse &&
+          t.meetDate === stMeetDate &&
+          t.timeMs === timeMs &&
+          normalizeTextKey(t.championshipName) === normalizeTextKey(cleanChamp)
+      );
+      if (dupTime) {
+        errors.timeInput = 'Catatan waktu yang identik untuk kejuaraan & tanggal ini sudah tersimpan.';
+      }
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setTimeFieldErrors(errors);
+      setTimeError(Object.values(errors)[0] || 'Periksa kembali kolom catatan waktu yang ditandai merah.');
+      return;
+    }
+    setTimeFieldErrors({});
+    if (!athleteObj || !timeMs) return;
+
     const formattedTime = formatSwimTimeMs(timeMs);
 
     // Check if new time beats previous PBs for same athlete + event + course
@@ -393,9 +526,12 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
   };
 
   const handleDeleteTime = async (st: SwimTime) => {
+    setListError(null);
     try {
       await deleteDoc(doc(db, 'swimTimes', st.id));
+      setConfirmDeleteTimeId(null);
     } catch (err) {
+      setListError(err instanceof Error ? err.message : 'Gagal menghapus catatan waktu.');
       handleFirestoreError(err, OperationType.DELETE, `swimTimes/${st.id}`);
     }
   };
@@ -566,6 +702,12 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
             </div>
           </div>
 
+          {listError && (
+            <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-xs text-red-800">
+              {listError}
+            </div>
+          )}
+
           {/* Athletes Table */}
           <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
             {filteredAthletes.length === 0 ? (
@@ -627,27 +769,48 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                           Wali: {ath.parentName || '-'}
                         </span>
                         <div className="inline-flex items-center gap-1.5 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => setDetailAthlete(ath)}
-                            className="px-3 min-h-[40px] text-xs font-medium text-sky-700 bg-sky-50 rounded-lg cursor-pointer"
-                          >
-                            Detail
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => openEditAthlete(ath)}
-                            className="px-3 min-h-[40px] text-xs font-medium text-slate-700 bg-slate-100 rounded-lg cursor-pointer"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteAthlete(ath)}
-                            className="px-3 min-h-[40px] text-xs font-medium text-red-700 bg-red-50 rounded-lg cursor-pointer"
-                          >
-                            Hapus
-                          </button>
+                          {confirmDeleteAthleteId === ath.id ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteAthlete(ath)}
+                                className="px-3 min-h-[40px] text-xs font-semibold text-white bg-red-600 rounded-lg cursor-pointer"
+                              >
+                                Konfirmasi
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeleteAthleteId(null)}
+                                className="px-3 min-h-[40px] text-xs font-medium text-slate-700 bg-slate-100 rounded-lg cursor-pointer"
+                              >
+                                Batal
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => setDetailAthlete(ath)}
+                                className="px-3 min-h-[40px] text-xs font-medium text-sky-700 bg-sky-50 rounded-lg cursor-pointer"
+                              >
+                                Detail
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => openEditAthlete(ath)}
+                                className="px-3 min-h-[40px] text-xs font-medium text-slate-700 bg-slate-100 rounded-lg cursor-pointer"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeleteAthleteId(ath.id)}
+                                className="px-3 min-h-[40px] text-xs font-medium text-red-700 bg-red-50 rounded-lg cursor-pointer"
+                              >
+                                Hapus
+                              </button>
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -714,30 +877,51 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                           </td>
                           <td className="py-3 px-4 text-right whitespace-nowrap">
                             <div className="inline-flex items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => setDetailAthlete(ath)}
-                                className="p-1.5 text-slate-500 hover:text-sky-700 rounded hover:bg-sky-50 cursor-pointer"
-                                title="Lihat rekor & detail atlet"
-                              >
-                                <Eye className="w-4 h-4" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => openEditAthlete(ath)}
-                                className="p-1.5 text-slate-500 hover:text-slate-900 rounded hover:bg-slate-100 cursor-pointer"
-                                title="Edit atlet"
-                              >
-                                <Edit3 className="w-4 h-4" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteAthlete(ath)}
-                                className="p-1.5 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 cursor-pointer"
-                                title="Hapus atlet"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                              {confirmDeleteAthleteId === ath.id ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteAthlete(ath)}
+                                    className="px-2 py-1 text-[11px] font-semibold text-white bg-red-600 rounded hover:bg-red-700 cursor-pointer"
+                                  >
+                                    Hapus
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setConfirmDeleteAthleteId(null)}
+                                    className="px-2 py-1 text-[11px] font-medium text-slate-600 bg-slate-100 rounded hover:bg-slate-200 cursor-pointer"
+                                  >
+                                    Batal
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => setDetailAthlete(ath)}
+                                    className="p-1.5 text-slate-500 hover:text-sky-700 rounded hover:bg-sky-50 cursor-pointer"
+                                    title="Lihat rekor & detail atlet"
+                                  >
+                                    <Eye className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => openEditAthlete(ath)}
+                                    className="p-1.5 text-slate-500 hover:text-slate-900 rounded hover:bg-slate-100 cursor-pointer"
+                                    title="Edit atlet"
+                                  >
+                                    <Edit3 className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setConfirmDeleteAthleteId(ath.id)}
+                                    className="p-1.5 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 cursor-pointer"
+                                    title="Hapus atlet"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -860,20 +1044,41 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                           )}
                         </div>
                         <div className="inline-flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => openEditTime(st)}
-                            className="px-3 min-h-[40px] text-xs font-medium text-slate-700 bg-slate-100 rounded-lg cursor-pointer"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteTime(st)}
-                            className="px-3 min-h-[40px] text-xs font-medium text-red-700 bg-red-50 rounded-lg cursor-pointer"
-                          >
-                            Hapus
-                          </button>
+                          {confirmDeleteTimeId === st.id ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteTime(st)}
+                                className="px-3 min-h-[40px] text-xs font-semibold text-white bg-red-600 rounded-lg cursor-pointer"
+                              >
+                                Konfirmasi
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeleteTimeId(null)}
+                                className="px-3 min-h-[40px] text-xs font-medium text-slate-700 bg-slate-100 rounded-lg cursor-pointer"
+                              >
+                                Batal
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => openEditTime(st)}
+                                className="px-3 min-h-[40px] text-xs font-medium text-slate-700 bg-slate-100 rounded-lg cursor-pointer"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeleteTimeId(st.id)}
+                                className="px-3 min-h-[40px] text-xs font-medium text-red-700 bg-red-50 rounded-lg cursor-pointer"
+                              >
+                                Hapus
+                              </button>
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -928,22 +1133,43 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                           </td>
                           <td className="py-3 px-4 text-right whitespace-nowrap">
                             <div className="inline-flex items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => openEditTime(st)}
-                                className="p-1.5 text-slate-500 hover:text-slate-900 rounded hover:bg-slate-100 cursor-pointer"
-                                title="Edit catatan waktu"
-                              >
-                                <Edit3 className="w-4 h-4" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteTime(st)}
-                                className="p-1.5 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 cursor-pointer"
-                                title="Hapus catatan waktu"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                              {confirmDeleteTimeId === st.id ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteTime(st)}
+                                    className="px-2 py-1 text-[11px] font-semibold text-white bg-red-600 rounded hover:bg-red-700 cursor-pointer"
+                                  >
+                                    Hapus
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setConfirmDeleteTimeId(null)}
+                                    className="px-2 py-1 text-[11px] font-medium text-slate-600 bg-slate-100 rounded hover:bg-slate-200 cursor-pointer"
+                                  >
+                                    Batal
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => openEditTime(st)}
+                                    className="p-1.5 text-slate-500 hover:text-slate-900 rounded hover:bg-slate-100 cursor-pointer"
+                                    title="Edit catatan waktu"
+                                  >
+                                    <Edit3 className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setConfirmDeleteTimeId(st.id)}
+                                    className="p-1.5 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 cursor-pointer"
+                                    title="Hapus catatan waktu"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -1121,25 +1347,33 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleSaveAthlete} className="mt-5 space-y-4">
+            <form onSubmit={handleSaveAthlete} noValidate className="mt-5 space-y-4">
               {athleteError && (
-                <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-xs text-red-800">
-                  {athleteError}
+                <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-xs text-red-800 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                  <span>{athleteError}</span>
                 </div>
               )}
 
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Nama Lengkap Atlet
+                  Nama Lengkap Atlet <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
-                  required
                   maxLength={LIMITS.athlete.fullNameMax}
                   value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
+                  onChange={(e) => {
+                    setFullName(e.target.value);
+                    clearAthleteError('fullName');
+                  }}
+                  className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg ${
+                    athleteFieldErrors.fullName ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
+                  }`}
                 />
+                {athleteFieldErrors.fullName && (
+                  <p className="mt-1 text-xs text-red-600">{athleteFieldErrors.fullName}</p>
+                )}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -1148,7 +1382,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                   <select
                     value={gender}
                     onChange={(e) => setGender(e.target.value as AthleteGender)}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white"
+                    className="w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border border-slate-200 rounded-lg bg-white"
                   >
                     <option value="Putra">Putra</option>
                     <option value="Putri">Putri</option>
@@ -1161,7 +1395,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                   <select
                     value={ageGroup}
                     onChange={(e) => setAgeGroup(e.target.value as AgeGroup)}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white"
+                    className="w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border border-slate-200 rounded-lg bg-white"
                   >
                     {AGE_GROUPS.map((g) => (
                       <option key={g} value={g}>
@@ -1175,7 +1409,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                   <select
                     value={status}
                     onChange={(e) => setStatus(e.target.value as AthleteStatus)}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white"
+                    className="w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border border-slate-200 rounded-lg bg-white"
                   >
                     <option value="Aktif">Aktif</option>
                     <option value="Cuti">Cuti</option>
@@ -1187,27 +1421,44 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">
-                    Tanggal Lahir
+                    Tanggal Lahir <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="date"
-                    required
+                    max={todayISO()}
                     value={birthDate}
-                    onChange={(e) => setBirthDate(e.target.value)}
-                    className="w-full px-3 py-2 text-sm font-mono-tabular border border-slate-200 rounded-lg"
+                    onChange={(e) => {
+                      setBirthDate(e.target.value);
+                      clearAthleteError('birthDate');
+                      clearAthleteError('joinDate');
+                    }}
+                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm font-mono-tabular border rounded-lg ${
+                      athleteFieldErrors.birthDate ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
+                    }`}
                   />
+                  {athleteFieldErrors.birthDate && (
+                    <p className="mt-1 text-xs text-red-600">{athleteFieldErrors.birthDate}</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">
-                    Tanggal Bergabung
+                    Tanggal Bergabung <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="date"
-                    required
+                    max={todayISO()}
                     value={joinDate}
-                    onChange={(e) => setJoinDate(e.target.value)}
-                    className="w-full px-3 py-2 text-sm font-mono-tabular border border-slate-200 rounded-lg"
+                    onChange={(e) => {
+                      setJoinDate(e.target.value);
+                      clearAthleteError('joinDate');
+                    }}
+                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm font-mono-tabular border rounded-lg ${
+                      athleteFieldErrors.joinDate ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
+                    }`}
                   />
+                  {athleteFieldErrors.joinDate && (
+                    <p className="mt-1 text-xs text-red-600">{athleteFieldErrors.joinDate}</p>
+                  )}
                 </div>
               </div>
 
@@ -1220,22 +1471,38 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                     type="text"
                     maxLength={LIMITS.athlete.parentNameMax}
                     value={parentName}
-                    onChange={(e) => setParentName(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
+                    onChange={(e) => {
+                      setParentName(e.target.value);
+                      clearAthleteError('parentName');
+                    }}
+                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg ${
+                      athleteFieldErrors.parentName ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
+                    }`}
                   />
+                  {athleteFieldErrors.parentName && (
+                    <p className="mt-1 text-xs text-red-600">{athleteFieldErrors.parentName}</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">
                     No. WhatsApp Wali
                   </label>
                   <input
-                    type="text"
+                    type="tel"
                     maxLength={LIMITS.athlete.parentPhoneMax}
                     value={parentPhone}
-                    onChange={(e) => setParentPhone(e.target.value)}
+                    onChange={(e) => {
+                      setParentPhone(e.target.value);
+                      clearAthleteError('parentPhone');
+                    }}
                     placeholder="0812..."
-                    className="w-full px-3 py-2 text-sm font-mono-tabular border border-slate-200 rounded-lg"
+                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm font-mono-tabular border rounded-lg ${
+                      athleteFieldErrors.parentPhone ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
+                    }`}
                   />
+                  {athleteFieldErrors.parentPhone && (
+                    <p className="mt-1 text-xs text-red-600">{athleteFieldErrors.parentPhone}</p>
+                  )}
                 </div>
               </div>
 
@@ -1248,36 +1515,57 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                     type="text"
                     maxLength={LIMITS.athlete.coachNameMax}
                     value={coachName}
-                    onChange={(e) => setCoachName(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
+                    onChange={(e) => {
+                      setCoachName(e.target.value);
+                      clearAthleteError('coachName');
+                    }}
+                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg ${
+                      athleteFieldErrors.coachName ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
+                    }`}
                   />
+                  {athleteFieldErrors.coachName && (
+                    <p className="mt-1 text-xs text-red-600">{athleteFieldErrors.coachName}</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">
-                    Iuran SPP Bulanan (Rp)
+                    Iuran SPP Bulanan (Rp) <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="number"
-                    required
                     min={0}
                     max={50000000}
+                    step={1}
                     value={monthlyFee}
-                    onChange={(e) => setMonthlyFee(e.target.value)}
-                    className="w-full px-3 py-2 text-sm font-mono-tabular border border-slate-200 rounded-lg"
+                    onChange={(e) => {
+                      setMonthlyFee(e.target.value);
+                      clearAthleteError('monthlyFee');
+                    }}
+                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm font-mono-tabular border rounded-lg ${
+                      athleteFieldErrors.monthlyFee ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
+                    }`}
                   />
+                  {athleteFieldErrors.monthlyFee && (
+                    <p className="mt-1 text-xs text-red-600">{athleteFieldErrors.monthlyFee}</p>
+                  )}
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Catatan Spesialisasi / Medis
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-medium text-slate-700">
+                    Catatan Spesialisasi / Medis
+                  </label>
+                  <span className="font-mono-tabular text-[11px] text-slate-400">
+                    {athleteNotes.length}/{LIMITS.athlete.notesMax}
+                  </span>
+                </div>
                 <textarea
                   rows={2}
                   maxLength={LIMITS.athlete.notesMax}
                   value={athleteNotes}
                   onChange={(e) => setAthleteNotes(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
+                  className="w-full px-3 py-2 text-base sm:text-sm border border-slate-200 rounded-lg"
                 />
               </div>
 
@@ -1324,20 +1612,29 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleSaveTime} className="mt-5 space-y-4">
+            <form onSubmit={handleSaveTime} noValidate className="mt-5 space-y-4">
               {timeError && (
-                <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-xs text-red-800">
-                  {timeError}
+                <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-xs text-red-800 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                  <span>{timeError}</span>
                 </div>
               )}
 
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Atlet</label>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Atlet <span className="text-red-500">*</span>
+                </label>
                 <select
                   value={stAthleteId}
-                  onChange={(e) => setStAthleteId(e.target.value)}
+                  onChange={(e) => {
+                    setStAthleteId(e.target.value);
+                    clearTimeError('athleteId');
+                    clearTimeError('meetDate');
+                  }}
                   disabled={!!editingTime}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white disabled:bg-slate-50"
+                  className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg bg-white disabled:bg-slate-50 ${
+                    timeFieldErrors.athleteId ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
+                  }`}
                 >
                   {athletes.map((a) => (
                     <option key={a.id} value={a.id}>
@@ -1345,6 +1642,9 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                     </option>
                   ))}
                 </select>
+                {timeFieldErrors.athleteId && (
+                  <p className="mt-1 text-xs text-red-600">{timeFieldErrors.athleteId}</p>
+                )}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -1353,7 +1653,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                   <select
                     value={stDistance}
                     onChange={(e) => setStDistance(Number(e.target.value))}
-                    className="w-full px-3 py-2 text-sm font-mono-tabular border border-slate-200 rounded-lg bg-white"
+                    className="w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm font-mono-tabular border border-slate-200 rounded-lg bg-white"
                   >
                     {SWIM_DISTANCES.map((d) => (
                       <option key={d} value={d}>
@@ -1367,7 +1667,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                   <select
                     value={stStroke}
                     onChange={(e) => setStStroke(e.target.value as SwimStroke)}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white"
+                    className="w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border border-slate-200 rounded-lg bg-white"
                   >
                     {SWIM_STROKES.map((s) => (
                       <option key={s} value={s}>
@@ -1381,7 +1681,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                   <select
                     value={stPoolCourse}
                     onChange={(e) => setStPoolCourse(e.target.value as PoolCourse)}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white"
+                    className="w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border border-slate-200 rounded-lg bg-white"
                   >
                     {POOL_COURSES.map((c) => (
                       <option key={c} value={c}>
@@ -1394,18 +1694,32 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">
-                    Catatan Waktu (mm:ss.cc atau ss.cc)
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-medium text-slate-700">
+                      Waktu (mm:ss.cc) <span className="text-red-500">*</span>
+                    </label>
+                    {liveParsedTimePreview && (
+                      <span className="font-mono-tabular text-[11px] font-semibold text-emerald-700">
+                        = {liveParsedTimePreview}
+                      </span>
+                    )}
+                  </div>
                   <input
                     type="text"
-                    required
                     maxLength={15}
                     value={stTimeInput}
-                    onChange={(e) => setStTimeInput(e.target.value)}
+                    onChange={(e) => {
+                      setStTimeInput(e.target.value);
+                      clearTimeError('timeInput');
+                    }}
                     placeholder="00:28.45"
-                    className="w-full px-3 py-2 text-sm font-mono-tabular border border-slate-200 rounded-lg"
+                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm font-mono-tabular border rounded-lg ${
+                      timeFieldErrors.timeInput ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
+                    }`}
                   />
+                  {timeFieldErrors.timeInput && (
+                    <p className="mt-1 text-xs text-red-600">{timeFieldErrors.timeInput}</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">
@@ -1414,7 +1728,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                   <select
                     value={stMedal}
                     onChange={(e) => setStMedal(e.target.value as MedalType)}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white"
+                    className="w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border border-slate-200 rounded-lg bg-white"
                   >
                     {MEDAL_TYPES.map((m) => (
                       <option key={m} value={m}>
@@ -1427,31 +1741,46 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
 
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Nama Kejuaraan / Event
+                  Nama Kejuaraan / Event <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
-                  required
                   maxLength={LIMITS.swimTime.championshipNameMax}
                   value={stChampionship}
-                  onChange={(e) => setStChampionship(e.target.value)}
+                  onChange={(e) => {
+                    setStChampionship(e.target.value);
+                    clearTimeError('championshipName');
+                  }}
                   placeholder="Contoh: Jabar Open Aquatic Championship 2026"
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
+                  className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg ${
+                    timeFieldErrors.championshipName ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
+                  }`}
                 />
+                {timeFieldErrors.championshipName && (
+                  <p className="mt-1 text-xs text-red-600">{timeFieldErrors.championshipName}</p>
+                )}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">
-                    Tanggal Lomba
+                    Tanggal Lomba <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="date"
-                    required
+                    max={todayISO()}
                     value={stMeetDate}
-                    onChange={(e) => setStMeetDate(e.target.value)}
-                    className="w-full px-3 py-2 text-sm font-mono-tabular border border-slate-200 rounded-lg"
+                    onChange={(e) => {
+                      setStMeetDate(e.target.value);
+                      clearTimeError('meetDate');
+                    }}
+                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm font-mono-tabular border rounded-lg ${
+                      timeFieldErrors.meetDate ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
+                    }`}
                   />
+                  {timeFieldErrors.meetDate && (
+                    <p className="mt-1 text-xs text-red-600">{timeFieldErrors.meetDate}</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">
@@ -1462,32 +1791,37 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                     maxLength={LIMITS.swimTime.locationMax}
                     value={stLocation}
                     onChange={(e) => setStLocation(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
+                    className="w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border border-slate-200 rounded-lg"
                   />
                 </div>
               </div>
 
-              <label className="flex items-center gap-2.5 text-xs text-slate-700 cursor-pointer">
+              <label className="flex items-center gap-2.5 text-xs text-slate-700 cursor-pointer min-h-[40px]">
                 <input
                   type="checkbox"
                   checked={stIsPB}
                   onChange={(e) => setStIsPB(e.target.checked)}
-                  className="rounded border-slate-300 text-sky-700"
+                  className="rounded border-slate-300 text-sky-700 w-4 h-4 shrink-0"
                 />
                 <CheckCircle2 className="w-4 h-4 text-sky-700 shrink-0" />
                 <span>Tandai sebagai Personal Best (otomatis mendeteksi jika memecahkan rekor sebelumnya)</span>
               </label>
 
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Catatan Evaluasi Pelatih
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-medium text-slate-700">
+                    Catatan Evaluasi Pelatih
+                  </label>
+                  <span className="font-mono-tabular text-[11px] text-slate-400">
+                    {stNotes.length}/{LIMITS.swimTime.notesMax}
+                  </span>
+                </div>
                 <textarea
                   rows={2}
                   maxLength={LIMITS.swimTime.notesMax}
                   value={stNotes}
                   onChange={(e) => setStNotes(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
+                  className="w-full px-3 py-2 text-base sm:text-sm border border-slate-200 rounded-lg"
                 />
               </div>
 

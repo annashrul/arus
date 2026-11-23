@@ -8,7 +8,17 @@ import {
   updateDoc,
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { clampString, isValidBlueprintDate, isValidBlueprintTime, LIMITS } from '../lib/validation';
+import {
+  clampString,
+  FieldErrors,
+  getDayOfWeekFromDate,
+  isValidBlueprintDate,
+  isValidBlueprintTime,
+  LIMITS,
+  timeToMinutes,
+  validateAttendanceDate,
+  validateScheduleInput,
+} from '../lib/validation';
 import {
   AGE_GROUPS,
   Athlete,
@@ -26,6 +36,7 @@ import {
   TrainingSchedule,
 } from '../types/club';
 import {
+  AlertTriangle,
   Calendar,
   CheckCircle2,
   Clock,
@@ -74,11 +85,15 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors<string>>({});
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
 
   // Attendance controls
   const [selectedScheduleId, setSelectedScheduleId] = useState<string>(schedules[0]?.id || '');
   const [attendanceDate, setAttendanceDate] = useState(todayISO());
   const [markingId, setMarkingId] = useState<string | null>(null);
+  const [attendanceError, setAttendanceError] = useState<string | null>(null);
 
   const dayOrder = useMemo(() => {
     const map = new Map<string, number>();
@@ -129,6 +144,16 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
     return map;
   }, [attendance, activeSchedule, attendanceDate]);
 
+  const clearFieldError = (key: string) => {
+    if (fieldErrors[key]) {
+      setFieldErrors((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    }
+  };
+
   const openCreateModal = () => {
     setEditingSchedule(null);
     setTitle('');
@@ -144,6 +169,7 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
     setTargetDistance('3000');
     setNotes('');
     setErrorMsg(null);
+    setFieldErrors({});
     setModalOpen(true);
   };
 
@@ -162,53 +188,59 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
     setTargetDistance(String(sch.targetDistanceMeters));
     setNotes(sch.notes || '');
     setErrorMsg(null);
+    setFieldErrors({});
     setModalOpen(true);
   };
+
+  const liveSessionDurationMinutes = useMemo(() => {
+    if (!isValidBlueprintTime(startTime) || !isValidBlueprintTime(endTime)) return null;
+    return timeToMinutes(endTime) - timeToMinutes(startTime);
+  }, [startTime, endTime]);
 
   const handleSaveSchedule = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
 
-    const cleanTitle = clampString(title, LIMITS.schedule.titleMax);
-    const cleanPool = clampString(poolLocation, LIMITS.schedule.poolLocationMax);
-    const cleanCoach = clampString(coachName, LIMITS.schedule.coachNameMax);
-    const parsedDist = Number(targetDistance);
+    const validation = validateScheduleInput(
+      {
+        title,
+        sessionType,
+        ageGroup,
+        dayOfWeek,
+        sessionDate,
+        startTime,
+        endTime,
+        poolLocation,
+        laneInfo,
+        coachName,
+        targetDistance,
+        notes,
+      },
+      schedules,
+      editingSchedule?.id
+    );
 
-    if (cleanTitle.length < 2) {
-      setErrorMsg('Judul sesi latihan minimal 2 karakter.');
+    if (!validation.valid) {
+      setFieldErrors(validation.fieldErrors);
+      setErrorMsg(validation.summaryError || 'Periksa kembali kolom jadwal yang ditandai merah.');
       return;
     }
-    if (!isValidBlueprintTime(startTime) || !isValidBlueprintTime(endTime)) {
-      setErrorMsg('Format jam mulai dan selesai harus HH:MM.');
-      return;
-    }
-    if (sessionDate && !isValidBlueprintDate(sessionDate)) {
-      setErrorMsg('Tanggal sesi opsional tidak valid.');
-      return;
-    }
-    if (cleanPool.length < 2 || cleanCoach.length < 2) {
-      setErrorMsg('Lokasi kolam dan nama pelatih wajib diisi.');
-      return;
-    }
-    if (!Number.isFinite(parsedDist) || parsedDist < 0 || parsedDist > 30000) {
-      setErrorMsg('Target jarak harus antara 0 hingga 30.000 meter.');
-      return;
-    }
+    setFieldErrors({});
 
     setSaving(true);
     try {
       const payload = {
-        title: cleanTitle,
+        title: clampString(title, LIMITS.schedule.titleMax),
         sessionType,
         ageGroup,
         dayOfWeek,
-        sessionDate: sessionDate || '',
+        sessionDate: sessionDate.trim(),
         startTime,
         endTime,
-        poolLocation: cleanPool,
+        poolLocation: clampString(poolLocation, LIMITS.schedule.poolLocationMax),
         laneInfo: clampString(laneInfo, LIMITS.schedule.laneInfoMax),
-        coachName: cleanCoach,
-        targetDistanceMeters: Math.round(parsedDist),
+        coachName: clampString(coachName, LIMITS.schedule.coachNameMax),
+        targetDistanceMeters: validation.parsedDistance,
         notes: clampString(notes, LIMITS.schedule.notesMax),
       };
 
@@ -237,16 +269,42 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
   };
 
   const handleDeleteSchedule = async (sch: TrainingSchedule) => {
+    setListError(null);
     try {
       await deleteDoc(doc(db, 'schedules', sch.id));
+      setConfirmDeleteId(null);
     } catch (err) {
+      setListError(err instanceof Error ? err.message : 'Gagal menghapus jadwal.');
       handleFirestoreError(err, OperationType.DELETE, `schedules/${sch.id}`);
     }
   };
 
+  const attendanceDateError = useMemo(() => validateAttendanceDate(attendanceDate), [attendanceDate]);
+
+  const attendanceDayMismatchWarning = useMemo(() => {
+    if (!activeSchedule || attendanceDateError || !isValidBlueprintDate(attendanceDate)) return null;
+    const pickedDay = getDayOfWeekFromDate(attendanceDate);
+    if (pickedDay && pickedDay !== activeSchedule.dayOfWeek) {
+      return `Tanggal ${formatDateID(attendanceDate)} adalah hari ${pickedDay}, sedangkan jadwal "${activeSchedule.title}" rutin hari ${activeSchedule.dayOfWeek}.`;
+    }
+    return null;
+  }, [activeSchedule, attendanceDate, attendanceDateError]);
+
   const handleMarkAttendance = async (athlete: Athlete, status: AttendanceStatus) => {
-    if (!activeSchedule) return;
-    if (!isValidBlueprintDate(attendanceDate)) return;
+    setAttendanceError(null);
+    if (!activeSchedule) {
+      setAttendanceError('Pilih sesi latihan terlebih dahulu.');
+      return;
+    }
+    const dateErr = validateAttendanceDate(attendanceDate);
+    if (dateErr) {
+      setAttendanceError(dateErr);
+      return;
+    }
+    if (!ATTENDANCE_STATUSES.includes(status)) {
+      setAttendanceError('Status presensi tidak valid.');
+      return;
+    }
 
     setMarkingId(athlete.id);
     const existingRec = attendanceMapForSession.get(athlete.id);
@@ -273,6 +331,8 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
           updatedAt: serverTimestamp(),
         }).catch((err) => handleFirestoreError(err, OperationType.CREATE, 'attendance'));
       }
+    } catch (err) {
+      setAttendanceError(err instanceof Error ? err.message : 'Gagal menyimpan presensi.');
     } finally {
       setMarkingId(null);
     }
@@ -391,6 +451,12 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
             </select>
           </div>
 
+          {listError && (
+            <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-xs text-red-800">
+              {listError}
+            </div>
+          )}
+
           {/* Schedule Grid */}
           {filteredSchedules.length === 0 ? (
             <div className="bg-white border border-slate-200 rounded-xl p-12 text-center space-y-3">
@@ -418,25 +484,48 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
                   <div className="space-y-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="text-xs font-medium text-sky-700">
-                        {sch.dayOfWeek} · <span className="font-mono-tabular">{sch.startTime}–{sch.endTime}</span>
+                        {sch.dayOfWeek}
+                        {sch.sessionDate ? ` (${formatDateID(sch.sessionDate)})` : ''} ·{' '}
+                        <span className="font-mono-tabular">{sch.startTime}–{sch.endTime}</span>
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => openEditModal(sch)}
-                          className="p-1 text-slate-400 hover:text-slate-800 rounded cursor-pointer"
-                          title="Edit jadwal"
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteSchedule(sch)}
-                          className="p-1 text-slate-400 hover:text-red-600 rounded cursor-pointer"
-                          title="Hapus jadwal"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {confirmDeleteId === sch.id ? (
+                          <div className="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteSchedule(sch)}
+                              className="px-2 py-1 text-[11px] font-semibold text-white bg-red-600 rounded hover:bg-red-700 cursor-pointer"
+                            >
+                              Hapus
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteId(null)}
+                              className="px-2 py-1 text-[11px] font-medium text-slate-600 bg-slate-100 rounded hover:bg-slate-200 cursor-pointer"
+                            >
+                              Batal
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => openEditModal(sch)}
+                              className="p-1.5 text-slate-400 hover:text-slate-800 rounded cursor-pointer"
+                              title="Edit jadwal"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteId(sch.id)}
+                              className="p-1.5 text-slate-400 hover:text-red-600 rounded cursor-pointer"
+                              title="Hapus jadwal"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
 
@@ -478,7 +567,10 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
                     type="button"
                     onClick={() => {
                       setSelectedScheduleId(sch.id);
-                      if (sch.sessionDate) setAttendanceDate(sch.sessionDate);
+                      if (sch.sessionDate && sch.sessionDate <= todayISO()) {
+                        setAttendanceDate(sch.sessionDate);
+                      }
+                      setAttendanceError(null);
                       setActiveTab('attendance');
                     }}
                     className="w-full min-h-[44px] sm:min-h-[36px] text-xs font-medium text-sky-700 bg-sky-50 hover:bg-sky-100 rounded-lg transition-colors cursor-pointer"
@@ -523,9 +615,15 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
                     </label>
                     <input
                       type="date"
+                      max={todayISO()}
                       value={attendanceDate}
-                      onChange={(e) => setAttendanceDate(e.target.value)}
-                      className="w-full sm:w-auto px-3 min-h-[44px] sm:min-h-[36px] text-sm sm:text-xs font-mono-tabular border border-slate-200 rounded-lg"
+                      onChange={(e) => {
+                        setAttendanceDate(e.target.value);
+                        setAttendanceError(null);
+                      }}
+                      className={`w-full sm:w-auto px-3 min-h-[44px] sm:min-h-[36px] text-sm sm:text-xs font-mono-tabular border rounded-lg ${
+                        attendanceDateError ? 'border-red-400 bg-red-50/40' : 'border-slate-200'
+                      }`}
                     />
                   </div>
                 </div>
@@ -539,6 +637,20 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
                   <span className="text-red-600">Alpa: {attendanceSummary.alpa}</span>
                 </div>
               </div>
+
+              {(attendanceDateError || attendanceError) && (
+                <div className="p-3.5 rounded-xl border border-red-200 bg-red-50 text-xs text-red-800 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                  <span>{attendanceError || attendanceDateError}</span>
+                </div>
+              )}
+
+              {attendanceDayMismatchWarning && !attendanceDateError && (
+                <div className="p-3.5 rounded-xl border border-amber-200 bg-amber-50 text-xs text-amber-800 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <span>{attendanceDayMismatchWarning} Anda tetap dapat mencatat jika ini sesi pengganti.</span>
+                </div>
+              )}
 
               <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
                 {matchingAthletesForSession.length === 0 ? (
@@ -585,9 +697,9 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
                                 <button
                                   key={st}
                                   type="button"
-                                  disabled={markingId === ath.id}
+                                  disabled={markingId === ath.id || !!attendanceDateError}
                                   onClick={() => handleMarkAttendance(ath, st)}
-                                  className={`min-h-[44px] text-xs font-medium rounded-md transition-colors cursor-pointer ${
+                                  className={`min-h-[44px] text-xs font-medium rounded-md transition-colors cursor-pointer disabled:opacity-50 ${
                                     rec?.status === st
                                       ? 'bg-white text-slate-900 shadow-sm'
                                       : 'text-slate-600'
@@ -644,36 +756,36 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
                                 </td>
                                 <td className="py-3 px-4 text-right">
                                   <div className="inline-flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
-                                    {ATTENDANCE_STATUSES.map((st) => (
-                                      <button
-                                        key={st}
-                                        type="button"
-                                        disabled={markingId === ath.id}
-                                        onClick={() => handleMarkAttendance(ath, st)}
-                                        className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors cursor-pointer ${
-                                          rec?.status === st
-                                            ? 'bg-white text-slate-900 shadow-sm'
-                                            : 'text-slate-600 hover:text-slate-900'
-                                        }`}
-                                      >
-                                        {st}
-                                      </button>
-                                    ))}
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </>
-                )}
-              </div>
-            </>
-          )}
-        </div>
-      )}
+                                      {ATTENDANCE_STATUSES.map((st) => (
+                                        <button
+                                          key={st}
+                                          type="button"
+                                          disabled={markingId === ath.id || !!attendanceDateError}
+                                          onClick={() => handleMarkAttendance(ath, st)}
+                                          className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors cursor-pointer disabled:opacity-50 ${
+                                            rec?.status === st
+                                              ? 'bg-white text-slate-900 shadow-sm'
+                                              : 'text-slate-600 hover:text-slate-900'
+                                          }`}
+                                        >
+                                          {st}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        )}
 
       {/* Add/Edit Schedule Modal (Bottom sheet on mobile) */}
       {modalOpen && (
@@ -694,26 +806,34 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
               </button>
             </div>
 
-            <form onSubmit={handleSaveSchedule} className="mt-5 space-y-4">
+            <form onSubmit={handleSaveSchedule} noValidate className="mt-5 space-y-4">
               {errorMsg && (
-                <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-xs text-red-800">
-                  {errorMsg}
+                <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-xs text-red-800 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                  <span>{errorMsg}</span>
                 </div>
               )}
 
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Nama Program / Sesi Latihan
+                  Nama Program / Sesi Latihan <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
-                  required
                   maxLength={LIMITS.schedule.titleMax}
                   value={title}
-                  onChange={(e) => setTitle(e.target.value)}
+                  onChange={(e) => {
+                    setTitle(e.target.value);
+                    clearFieldError('title');
+                  }}
                   placeholder="Contoh: Latihan Sprint & Start Block"
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
+                  className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg ${
+                    fieldErrors.title ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
+                  }`}
                 />
+                {fieldErrors.title && (
+                  <p className="mt-1 text-xs text-red-600">{fieldErrors.title}</p>
+                )}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -723,8 +843,18 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
                   </label>
                   <select
                     value={sessionType}
-                    onChange={(e) => setSessionType(e.target.value as ScheduleSessionType)}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white"
+                    onChange={(e) => {
+                      const nextType = e.target.value as ScheduleSessionType;
+                      setSessionType(nextType);
+                      if (nextType === 'Latihan Fisik (Dryland)' && targetDistance === '3000') {
+                        setTargetDistance('0');
+                      }
+                      clearFieldError('sessionType');
+                      clearFieldError('targetDistance');
+                    }}
+                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg bg-white ${
+                      fieldErrors.sessionType ? 'border-red-400' : 'border-slate-200'
+                    }`}
                   >
                     {SESSION_TYPES.map((t) => (
                       <option key={t} value={t}>
@@ -739,8 +869,13 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
                   </label>
                   <select
                     value={ageGroup}
-                    onChange={(e) => setAgeGroup(e.target.value as ScheduleAgeGroup)}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white"
+                    onChange={(e) => {
+                      setAgeGroup(e.target.value as ScheduleAgeGroup);
+                      clearFieldError('ageGroup');
+                    }}
+                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg bg-white ${
+                      fieldErrors.ageGroup ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
+                    }`}
                   >
                     <option value="Semua Kelompok">Semua Kelompok</option>
                     {AGE_GROUPS.map((g) => (
@@ -749,16 +884,27 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
                       </option>
                     ))}
                   </select>
+                  {fieldErrors.ageGroup && (
+                    <p className="mt-1 text-xs text-red-600">{fieldErrors.ageGroup}</p>
+                  )}
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">Hari</label>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">
+                    Hari Rutin <span className="text-red-500">*</span>
+                  </label>
                   <select
                     value={dayOfWeek}
-                    onChange={(e) => setDayOfWeek(e.target.value as DayOfWeek)}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white"
+                    onChange={(e) => {
+                      setDayOfWeek(e.target.value as DayOfWeek);
+                      clearFieldError('dayOfWeek');
+                      clearFieldError('sessionDate');
+                    }}
+                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg bg-white ${
+                      fieldErrors.dayOfWeek ? 'border-red-400' : 'border-slate-200'
+                    }`}
                   >
                     {DAYS_OF_WEEK.map((d) => (
                       <option key={d} value={d}>
@@ -769,43 +915,101 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">
-                    Jam Mulai
+                    Tanggal Khusus (Opsional)
                   </label>
                   <input
-                    type="time"
-                    required
-                    value={startTime}
-                    onChange={(e) => setStartTime(e.target.value)}
-                    className="w-full px-3 py-2 text-sm font-mono-tabular border border-slate-200 rounded-lg"
+                    type="date"
+                    value={sessionDate}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setSessionDate(val);
+                      const derivedDay = getDayOfWeekFromDate(val);
+                      if (derivedDay) {
+                        setDayOfWeek(derivedDay);
+                      }
+                      clearFieldError('sessionDate');
+                      clearFieldError('dayOfWeek');
+                    }}
+                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm font-mono-tabular border rounded-lg ${
+                      fieldErrors.sessionDate ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
+                    }`}
                   />
+                  {fieldErrors.sessionDate && (
+                    <p className="mt-1 text-xs text-red-600">{fieldErrors.sessionDate}</p>
+                  )}
                 </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">
-                    Jam Selesai
+                    Jam Mulai <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="time"
-                    required
-                    value={endTime}
-                    onChange={(e) => setEndTime(e.target.value)}
-                    className="w-full px-3 py-2 text-sm font-mono-tabular border border-slate-200 rounded-lg"
+                    value={startTime}
+                    onChange={(e) => {
+                      setStartTime(e.target.value);
+                      clearFieldError('startTime');
+                      clearFieldError('endTime');
+                    }}
+                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm font-mono-tabular border rounded-lg ${
+                      fieldErrors.startTime ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
+                    }`}
                   />
+                  {fieldErrors.startTime && (
+                    <p className="mt-1 text-xs text-red-600">{fieldErrors.startTime}</p>
+                  )}
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-medium text-slate-700">
+                      Jam Selesai <span className="text-red-500">*</span>
+                    </label>
+                    {liveSessionDurationMinutes !== null && liveSessionDurationMinutes > 0 && (
+                      <span className="font-mono-tabular text-[11px] text-slate-500">
+                        {liveSessionDurationMinutes} mnt
+                      </span>
+                    )}
+                  </div>
+                  <input
+                    type="time"
+                    value={endTime}
+                    onChange={(e) => {
+                      setEndTime(e.target.value);
+                      clearFieldError('endTime');
+                    }}
+                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm font-mono-tabular border rounded-lg ${
+                      fieldErrors.endTime ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
+                    }`}
+                  />
+                  {fieldErrors.endTime && (
+                    <p className="mt-1 text-xs text-red-600">{fieldErrors.endTime}</p>
+                  )}
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">
-                    Lokasi Kolam / Fasilitas
+                    Lokasi Kolam / Fasilitas <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
-                    required
                     maxLength={LIMITS.schedule.poolLocationMax}
                     value={poolLocation}
-                    onChange={(e) => setPoolLocation(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
+                    onChange={(e) => {
+                      setPoolLocation(e.target.value);
+                      clearFieldError('poolLocation');
+                      clearFieldError('laneInfo');
+                    }}
+                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg ${
+                      fieldErrors.poolLocation ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
+                    }`}
                   />
+                  {fieldErrors.poolLocation && (
+                    <p className="mt-1 text-xs text-red-600">{fieldErrors.poolLocation}</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">
@@ -815,55 +1019,91 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
                     type="text"
                     maxLength={LIMITS.schedule.laneInfoMax}
                     value={laneInfo}
-                    onChange={(e) => setLaneInfo(e.target.value)}
+                    onChange={(e) => {
+                      setLaneInfo(e.target.value);
+                      clearFieldError('laneInfo');
+                    }}
                     placeholder="Lintasan 1–4"
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
+                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg ${
+                      fieldErrors.laneInfo ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
+                    }`}
                   />
+                  {fieldErrors.laneInfo && (
+                    <p className="mt-1 text-xs text-red-600">{fieldErrors.laneInfo}</p>
+                  )}
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">
-                    Pelatih Sesi
+                    Pelatih Sesi <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
-                    required
                     maxLength={LIMITS.schedule.coachNameMax}
                     value={coachName}
-                    onChange={(e) => setCoachName(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
+                    onChange={(e) => {
+                      setCoachName(e.target.value);
+                      clearFieldError('coachName');
+                    }}
+                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg ${
+                      fieldErrors.coachName ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
+                    }`}
                   />
+                  {fieldErrors.coachName && (
+                    <p className="mt-1 text-xs text-red-600">{fieldErrors.coachName}</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">
-                    Target Jarak (Meter)
+                    Target Jarak (Meter) <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="number"
-                    required
                     min={0}
                     max={30000}
+                    step={50}
                     value={targetDistance}
-                    onChange={(e) => setTargetDistance(e.target.value)}
-                    className="w-full px-3 py-2 text-sm font-mono-tabular border border-slate-200 rounded-lg"
+                    onChange={(e) => {
+                      setTargetDistance(e.target.value);
+                      clearFieldError('targetDistance');
+                    }}
+                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm font-mono-tabular border rounded-lg ${
+                      fieldErrors.targetDistance ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
+                    }`}
                   />
+                  {fieldErrors.targetDistance && (
+                    <p className="mt-1 text-xs text-red-600">{fieldErrors.targetDistance}</p>
+                  )}
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Instruksi / Perlengkapan Latihan
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-medium text-slate-700">
+                    Instruksi / Perlengkapan Latihan
+                  </label>
+                  <span className="font-mono-tabular text-[11px] text-slate-400">
+                    {notes.length}/{LIMITS.schedule.notesMax}
+                  </span>
+                </div>
                 <textarea
                   rows={2}
                   maxLength={LIMITS.schedule.notesMax}
                   value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
+                  onChange={(e) => {
+                    setNotes(e.target.value);
+                    clearFieldError('notes');
+                  }}
                   placeholder="Contoh: Bawa fins pendek, pullbuoy, dan botol minum."
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
+                  className={`w-full px-3 py-2 text-base sm:text-sm border rounded-lg ${
+                    fieldErrors.notes ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
+                  }`}
                 />
+                {fieldErrors.notes && (
+                  <p className="mt-1 text-xs text-red-600">{fieldErrors.notes}</p>
+                )}
               </div>
 
               <div className="pt-4 border-t border-slate-200 grid grid-cols-2 sm:flex sm:justify-end gap-2.5">
