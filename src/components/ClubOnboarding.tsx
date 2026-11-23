@@ -76,8 +76,8 @@ export const ClubOnboarding: React.FC<ClubOnboardingProps> = ({ user, onClubCrea
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col lg:flex-row">
-      {/* Left Visual Column */}
-      <div className="lg:w-1/2 relative min-h-[280px] lg:min-h-screen bg-slate-900 overflow-hidden flex flex-col justify-between p-8 lg:p-12">
+      {/* Visual Column (Compact mobile banner -> full-height split panel on lg) */}
+      <div className="lg:w-1/2 relative min-h-[190px] sm:min-h-[240px] lg:min-h-screen bg-slate-900 overflow-hidden flex flex-col justify-between p-5 sm:p-8 lg:p-12">
         <img
           src="/src/assets/images/swim_club_pool_hero_1795440061254.jpg"
           alt="Kolam renang standar kejuaraan Tirta Aquatics"
@@ -87,7 +87,7 @@ export const ClubOnboarding: React.FC<ClubOnboardingProps> = ({ user, onClubCrea
         <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-900/55 to-slate-950/40" />
 
         <div className="relative z-10 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-white p-1 shrink-0 overflow-hidden">
+          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-white p-1 shrink-0 overflow-hidden">
             <img
               src="/src/assets/images/swim_club_emblem_1795440060748.jpg"
               alt="Logo Klub Renang"
@@ -95,24 +95,24 @@ export const ClubOnboarding: React.FC<ClubOnboardingProps> = ({ user, onClubCrea
               className="w-full h-full object-cover rounded"
             />
           </div>
-          <span className="font-display text-lg font-bold tracking-tight text-white">
+          <span className="font-display text-base sm:text-lg font-bold tracking-tight text-white">
             Tirta Aquatics
           </span>
         </div>
 
-        <div className="relative z-10 max-w-xl space-y-4 my-8 lg:my-0">
-          <p className="text-xs font-medium tracking-wide text-sky-300">
+        <div className="relative z-10 max-w-xl space-y-2 sm:space-y-4 mt-6 lg:my-0">
+          <p className="text-[11px] sm:text-xs font-medium tracking-wide text-sky-300">
             Sistem Manajemen Klub Renang Terpadu
           </p>
-          <h1 className="font-display text-3xl lg:text-4xl font-bold text-white leading-tight">
+          <h1 className="font-display text-xl sm:text-3xl lg:text-4xl font-bold text-white leading-snug lg:leading-tight">
             Kelola Kas Keuangan, Prestasi Atlet, Jadwal Latihan, dan Invoice Klub dalam Satu Workspace.
           </h1>
-          <p className="text-sm lg:text-base text-slate-200 leading-relaxed">
+          <p className="hidden sm:block text-sm lg:text-base text-slate-200 leading-relaxed">
             Dirancang khusus untuk pelatih kepala, bendahara, dan pengurus klub renang Indonesia dengan pencatatan waktu kejuaraan terstruktur dan laporan kas real-time.
           </p>
         </div>
 
-        <div className="relative z-10 flex flex-wrap items-center gap-4 text-xs text-slate-300">
+        <div className="relative z-10 hidden sm:flex flex-wrap items-center gap-4 text-xs text-slate-300 mt-4 lg:mt-0">
           <span>Catatan Keuangan Kas</span>
           <span aria-hidden="true">·</span>
           <span>Rekor Waktu Atlet</span>
@@ -123,12 +123,12 @@ export const ClubOnboarding: React.FC<ClubOnboardingProps> = ({ user, onClubCrea
         </div>
       </div>
 
-      {/* Right Interactive Auth / Onboarding Column */}
-      <div className="lg:w-1/2 flex items-center justify-center p-6 sm:p-10 lg:p-16 bg-white">
+      {/* Interactive Auth / Onboarding Column */}
+      <div className="flex-1 lg:w-1/2 flex items-start sm:items-center justify-center p-5 sm:p-10 lg:p-16 bg-white pb-safe">
         {!user ? (
-          <div className="w-full max-w-md space-y-8">
+          <div className="w-full max-w-md space-y-6 sm:space-y-8 pt-2 sm:pt-0">
             <div className="space-y-2">
-              <h2 className="font-display text-2xl font-bold text-slate-900">
+              <h2 className="font-display text-xl sm:text-2xl font-bold text-slate-900">
                 Masuk ke Workspace Klub
               </h2>
               <p className="text-sm text-slate-600 leading-relaxed">
@@ -146,7 +146,7 @@ export const ClubOnboarding: React.FC<ClubOnboardingProps> = ({ user, onClubCrea
               type="button"
               onClick={handleGoogleLogin}
               disabled={signingIn}
-              className="w-full flex items-center justify-center gap-3 px-5 py-3 bg-slate-900 text-white text-sm font-medium rounded-lg hover:bg-slate-800 transition-colors disabled:opacity-60 cursor-pointer"
+              className="w-full flex items-center justify-center gap-3 px-5 min-h-[48px] bg-slate-900 text-white text-sm font-medium rounded-xl hover:bg-slate-800 transition-colors disabled:opacity-60 cursor-pointer"
             >
               {signingIn ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -157,24 +157,24 @@ export const ClubOnboarding: React.FC<ClubOnboardingProps> = ({ user, onClubCrea
               <ArrowRight className="w-4 h-4" />
             </button>
 
-            <div className="pt-6 border-t border-slate-200 space-y-2.5 text-xs text-slate-500">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <div className="pt-5 border-t border-slate-200 space-y-2.5 text-xs text-slate-500">
+              <div className="flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                 <span>Data terisolasi per pemilik klub dengan aturan keamanan terenkripsi</span>
               </div>
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <div className="flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                 <span>Mendukung ekspor CSV laporan keuangan, catatan waktu, & cetak invoice PDF</span>
               </div>
             </div>
           </div>
         ) : (
-          <form onSubmit={handleCreateClub} className="w-full max-w-md space-y-6">
+          <form onSubmit={handleCreateClub} className="w-full max-w-md space-y-5 sm:space-y-6 pt-1 sm:pt-0">
             <div className="space-y-1.5">
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-slate-500 truncate">
                 Masuk sebagai {user.email}
               </p>
-              <h2 className="font-display text-2xl font-bold text-slate-900">
+              <h2 className="font-display text-xl sm:text-2xl font-bold text-slate-900">
                 Setup Profil Klub Renang Anda
               </h2>
               <p className="text-sm text-slate-600">
@@ -199,7 +199,7 @@ export const ClubOnboarding: React.FC<ClubOnboardingProps> = ({ user, onClubCrea
                   maxLength={100}
                   value={clubName}
                   onChange={(e) => setClubName(e.target.value)}
-                  className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-600/20 focus:border-sky-600"
+                  className="w-full px-3.5 min-h-[44px] text-base sm:text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-600/20 focus:border-sky-600"
                   placeholder="Contoh: Tirta Kencana Aquatics"
                 />
               </div>
@@ -215,7 +215,7 @@ export const ClubOnboarding: React.FC<ClubOnboardingProps> = ({ user, onClubCrea
                     maxLength={60}
                     value={city}
                     onChange={(e) => setCity(e.target.value)}
-                    className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-600/20 focus:border-sky-600"
+                    className="w-full px-3.5 min-h-[44px] text-base sm:text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-600/20 focus:border-sky-600"
                     placeholder="Bandung"
                   />
                 </div>
@@ -230,7 +230,7 @@ export const ClubOnboarding: React.FC<ClubOnboardingProps> = ({ user, onClubCrea
                     max={50000000}
                     value={defaultFee}
                     onChange={(e) => setDefaultFee(e.target.value)}
-                    className="w-full px-3.5 py-2.5 text-sm font-mono-tabular border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-600/20 focus:border-sky-600"
+                    className="w-full px-3.5 min-h-[44px] text-base sm:text-sm font-mono-tabular border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-600/20 focus:border-sky-600"
                   />
                 </div>
               </div>
@@ -245,17 +245,17 @@ export const ClubOnboarding: React.FC<ClubOnboardingProps> = ({ user, onClubCrea
                   maxLength={80}
                   value={headCoach}
                   onChange={(e) => setHeadCoach(e.target.value)}
-                  className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-600/20 focus:border-sky-600"
+                  className="w-full px-3.5 min-h-[44px] text-base sm:text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-600/20 focus:border-sky-600"
                   placeholder="Coach Hendra Wijaya"
                 />
               </div>
 
-              <label className="flex items-start gap-3 p-3.5 rounded-lg border border-slate-200 bg-slate-50 cursor-pointer">
+              <label className="flex items-start gap-3 p-3.5 rounded-xl border border-slate-200 bg-slate-50 cursor-pointer min-h-[44px]">
                 <input
                   type="checkbox"
                   checked={withSample}
                   onChange={(e) => setWithSample(e.target.checked)}
-                  className="mt-0.5 w-4 h-4 rounded border-slate-300 text-sky-600 focus:ring-sky-600"
+                  className="mt-0.5 w-4 h-4 rounded border-slate-300 text-sky-600 focus:ring-sky-600 shrink-0"
                 />
                 <div className="text-xs leading-relaxed">
                   <span className="font-semibold text-slate-900 block">
@@ -271,7 +271,7 @@ export const ClubOnboarding: React.FC<ClubOnboardingProps> = ({ user, onClubCrea
             <button
               type="submit"
               disabled={submitting}
-              className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-sky-700 text-white text-sm font-medium rounded-lg hover:bg-sky-800 transition-colors disabled:opacity-60 cursor-pointer"
+              className="w-full flex items-center justify-center gap-2 px-5 min-h-[48px] bg-sky-700 text-white text-sm font-medium rounded-xl hover:bg-sky-800 transition-colors disabled:opacity-60 cursor-pointer"
             >
               {submitting ? (
                 <Loader2 className="w-4 h-4 animate-spin" />

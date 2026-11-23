@@ -215,6 +215,14 @@ function SwimmingClubWorkspace() {
 
   const currentNavLabel = NAV_ITEMS.find((n) => n.id === activeNav)?.label || 'Ringkasan';
 
+  const MOBILE_NAV_LABELS: Record<NavSection, string> = {
+    overview: 'Ringkasan',
+    finance: 'Kas',
+    athletes: 'Atlet',
+    schedules: 'Jadwal',
+    invoices: 'Invoice',
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 flex">
       {/* Desktop Sidebar */}
@@ -275,19 +283,31 @@ function SwimmingClubWorkspace() {
       {mobileMenuOpen && (
         <div className="fixed inset-0 z-50 lg:hidden flex no-print">
           <div
-            className="fixed inset-0 bg-slate-900/40"
+            className="fixed inset-0 bg-slate-900/40 backdrop-blur-[1px]"
             onClick={() => setMobileMenuOpen(false)}
           />
-          <aside className="relative w-72 max-w-[85vw] bg-white h-full flex flex-col justify-between p-4 z-10 border-r border-slate-200">
+          <aside className="relative w-72 max-w-[85vw] bg-white h-full flex flex-col justify-between p-4 pb-safe z-10 border-r border-slate-200">
             <div>
-              <div className="flex items-center justify-between pb-4 border-b border-slate-200">
-                <span className="font-display text-sm font-bold text-slate-900 truncate">
-                  {activeClub.name}
-                </span>
+              <div className="flex items-center justify-between pb-3.5 border-b border-slate-200">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <img
+                    src="/src/assets/images/swim_club_emblem_1795440060748.jpg"
+                    alt="Logo Klub"
+                    referrerPolicy="no-referrer"
+                    className="w-8 h-8 rounded-md object-cover border border-slate-200 shrink-0"
+                  />
+                  <div className="min-w-0">
+                    <div className="font-display text-sm font-bold text-slate-900 truncate">
+                      {activeClub.name}
+                    </div>
+                    <div className="text-xs text-slate-500 truncate">{activeClub.city}</div>
+                  </div>
+                </div>
                 <button
                   type="button"
                   onClick={() => setMobileMenuOpen(false)}
-                  className="p-2 text-slate-500 rounded-lg"
+                  className="p-2 text-slate-500 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
+                  aria-label="Tutup menu"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -304,7 +324,7 @@ function SwimmingClubWorkspace() {
                         setActiveNav(item.id);
                         setMobileMenuOpen(false);
                       }}
-                      className={`w-full flex items-center gap-3 px-3 py-3 text-sm font-medium rounded-lg ${
+                      className={`w-full flex items-center gap-3 px-3.5 min-h-[48px] text-sm font-medium rounded-xl cursor-pointer ${
                         active ? 'bg-sky-50 text-sky-800' : 'text-slate-700 hover:bg-slate-50'
                       }`}
                     >
@@ -315,33 +335,41 @@ function SwimmingClubWorkspace() {
                 })}
               </nav>
             </div>
-            <button
-              type="button"
-              onClick={() => signOut(auth)}
-              className="w-full flex items-center justify-center gap-2 px-3 py-2.5 text-xs font-medium text-slate-700 border border-slate-200 rounded-lg"
-            >
-              <LogOut className="w-4 h-4" />
-              Keluar Akun
-            </button>
+            <div className="pt-4 border-t border-slate-200 space-y-3">
+              <div className="text-xs px-1">
+                <div className="font-semibold text-slate-900 truncate">
+                  {user.displayName || activeClub.headCoach}
+                </div>
+                <div className="text-slate-500 truncate">{user.email}</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => signOut(auth)}
+                className="w-full flex items-center justify-center gap-2 px-3 min-h-[44px] text-xs font-medium text-slate-700 border border-slate-200 rounded-xl cursor-pointer"
+              >
+                <LogOut className="w-4 h-4" />
+                Keluar Akun
+              </button>
+            </div>
           </aside>
         </div>
       )}
 
       {/* Main Content Area */}
       <div className="flex-1 lg:pl-64 flex flex-col min-w-0">
-        {/* Top Bar Contract */}
-        <header className="h-14 lg:h-16 bg-white border-b border-slate-200 px-4 sm:px-8 flex items-center justify-between gap-3 sm:gap-8 sticky top-0 z-30 no-print">
-          <div className="flex items-center gap-3 min-w-0">
+        {/* Top Bar Contract (non-sticky on mobile so fixed bottom tab bar stays well under 15% sticky cap) */}
+        <header className="h-14 lg:h-16 bg-white border-b border-slate-200 px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-3 sm:gap-8 relative lg:sticky lg:top-0 z-30 no-print">
+          <div className="flex items-center gap-2.5 min-w-0">
             <button
               type="button"
               onClick={() => setMobileMenuOpen(true)}
-              className="lg:hidden p-2 -ml-2 text-slate-600 hover:text-slate-900 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center"
+              className="lg:hidden p-2 -ml-2 text-slate-700 hover:text-slate-900 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
               aria-label="Buka menu navigasi"
             >
               <Menu className="w-5 h-5" />
             </button>
-            <div className="flex items-center gap-2 text-sm truncate">
-              <span className="text-slate-400 hidden sm:inline">{activeClub.city}</span>
+            <div className="flex items-center gap-2 text-sm min-w-0">
+              <span className="text-slate-400 hidden sm:inline whitespace-nowrap">{activeClub.city}</span>
               <span className="text-slate-300 hidden sm:inline" aria-hidden="true">
                 /
               </span>
@@ -355,39 +383,14 @@ function SwimmingClubWorkspace() {
             <button
               type="button"
               onClick={() => setActiveNav(activeNav === 'invoices' ? 'finance' : 'invoices')}
-              className="px-3 py-2 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200/70 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              className="px-3.5 min-h-[40px] lg:min-h-[36px] text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200/70 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
             >
               {activeNav === 'invoices' ? 'Keuangan Kas' : 'Invoice SPP'}
             </button>
           </div>
         </header>
 
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-[1400px] w-full mx-auto">
-          {/* Mobile & Tablet Horizontal Quick Navigation */}
-          <div className="lg:hidden mb-5 -mx-4 px-4 overflow-x-auto no-print">
-            <div className="flex items-center gap-1.5 pb-1 w-max">
-              {NAV_ITEMS.map((item) => {
-                const Icon = item.icon;
-                const active = activeNav === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => setActiveNav(item.id)}
-                    className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap shrink-0 cursor-pointer min-h-[40px] ${
-                      active
-                        ? 'bg-sky-700 text-white border-sky-700'
-                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                    }`}
-                  >
-                    <Icon className="w-3.5 h-3.5 shrink-0" />
-                    <span>{item.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
+        <main className="flex-1 px-4 pt-4 pb-24 sm:px-6 sm:pt-6 sm:pb-24 lg:p-8 max-w-[1400px] w-full mx-auto">
           {activeNav === 'overview' && (
             <OverviewView
               club={activeClub}
@@ -443,6 +446,34 @@ function SwimmingClubWorkspace() {
           )}
         </main>
       </div>
+
+      {/* Fixed Mobile Bottom Tab Bar (Thumb Zone Anchor) */}
+      <nav
+        aria-label="Navigasi utama mobile"
+        className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-slate-200 pb-safe no-print"
+      >
+        <div className="grid grid-cols-5 h-16 max-w-xl mx-auto">
+          {NAV_ITEMS.map((item) => {
+            const Icon = item.icon;
+            const active = activeNav === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setActiveNav(item.id)}
+                className={`flex flex-col items-center justify-center gap-0.5 min-h-[44px] transition-colors cursor-pointer ${
+                  active ? 'text-sky-700' : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <Icon className={`w-5 h-5 ${active ? 'stroke-[2.25]' : 'stroke-[1.75]'}`} />
+                <span className={`text-[10px] tracking-tight ${active ? 'font-semibold' : 'font-medium'}`}>
+                  {MOBILE_NAV_LABELS[item.id]}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
     </div>
   );
 }

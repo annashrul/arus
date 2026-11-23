@@ -455,22 +455,22 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
   return (
     <div className="space-y-6">
       {/* Header & Sub-tab Switcher */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 sm:gap-4">
         <div>
-          <h1 className="font-display text-xl font-bold text-slate-900">
+          <h1 className="font-display text-lg sm:text-xl font-bold text-slate-900">
             Atlet & Catatan Waktu Kejuaraan
           </h1>
-          <p className="text-sm text-slate-500">
+          <p className="text-xs sm:text-sm text-slate-500">
             Database atlet per kelompok umur (KU), catatan waktu lomba resmi, dan rekor Personal Best.
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5 shrink-0">
+        <div className="grid grid-cols-2 sm:flex items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={activeTab === 'athletes' ? handleExportAthletesCSV : handleExportTimesCSV}
             disabled={activeTab === 'athletes' ? filteredAthletes.length === 0 : filteredTimes.length === 0}
-            className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50"
+            className="inline-flex items-center justify-center gap-1.5 px-3.5 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50"
           >
             <Download className="w-3.5 h-3.5" />
             Unduh CSV
@@ -479,7 +479,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
             <button
               type="button"
               onClick={openCreateAthlete}
-              className="inline-flex items-center gap-2 px-4 py-2 text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 whitespace-nowrap shrink-0 cursor-pointer"
+              className="inline-flex items-center justify-center gap-1.5 px-4 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 whitespace-nowrap shrink-0 cursor-pointer"
             >
               <UserPlus className="w-3.5 h-3.5" />
               Tambah Atlet
@@ -489,21 +489,21 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
               type="button"
               onClick={() => openCreateTime()}
               disabled={athletes.length === 0}
-              className="inline-flex items-center gap-2 px-4 py-2 text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50"
+              className="inline-flex items-center justify-center gap-1.5 px-4 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50"
             >
               <Plus className="w-3.5 h-3.5" />
-              Catat Waktu Lomba
+              Catat Waktu
             </button>
           )}
         </div>
       </div>
 
       {/* Sub-tabs */}
-      <div className="flex items-center gap-1 p-1 bg-slate-200/70 rounded-lg w-fit max-w-full overflow-x-auto">
+      <div className="grid grid-cols-2 sm:inline-flex items-center gap-1 p-1 bg-slate-200/70 rounded-lg w-full sm:w-fit">
         <button
           type="button"
           onClick={() => setActiveTab('athletes')}
-          className={`px-4 py-2 text-xs font-semibold rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+          className={`px-3 sm:px-4 min-h-[44px] sm:min-h-[36px] text-xs font-semibold rounded-md transition-colors whitespace-nowrap truncate cursor-pointer ${
             activeTab === 'athletes'
               ? 'bg-white text-slate-900 shadow-sm'
               : 'text-slate-600 hover:text-slate-900'
@@ -514,38 +514,38 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
         <button
           type="button"
           onClick={() => setActiveTab('times')}
-          className={`px-4 py-2 text-xs font-semibold rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+          className={`px-3 sm:px-4 min-h-[44px] sm:min-h-[36px] text-xs font-semibold rounded-md transition-colors whitespace-nowrap truncate cursor-pointer ${
             activeTab === 'times'
               ? 'bg-white text-slate-900 shadow-sm'
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          Catatan Waktu Kejuaraan ({swimTimes.length})
+          Catatan Waktu ({swimTimes.length})
         </button>
       </div>
 
       {activeTab === 'athletes' ? (
         <>
           {/* Athlete Filters */}
-          <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="relative flex-1 max-w-sm">
+          <div className="bg-white border border-slate-200 rounded-xl p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3">
+            <div className="relative flex-1 sm:max-w-sm">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 value={athleteSearch}
                 onChange={(e) => setAthleteSearch(e.target.value)}
                 placeholder="Cari nama atlet, wali, atau pelatih..."
-                className="w-full pl-9 pr-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-sky-600"
+                className="w-full pl-9 pr-3 min-h-[44px] sm:min-h-[36px] text-sm sm:text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-sky-600"
               />
             </div>
 
-            <div className="flex flex-wrap items-center gap-2.5">
+            <div className="grid grid-cols-2 sm:flex items-center gap-2.5">
               <select
                 value={ageGroupFilter}
                 onChange={(e) => setAgeGroupFilter(e.target.value)}
-                className="px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white text-slate-700"
+                className="w-full sm:w-auto px-3 min-h-[44px] sm:min-h-[36px] text-sm sm:text-xs border border-slate-200 rounded-lg bg-white text-slate-700"
               >
-                <option value="all">Semua Kelompok Umur</option>
+                <option value="all">Semua KU</option>
                 {AGE_GROUPS.map((g) => (
                   <option key={g} value={g}>
                     {g}
@@ -556,7 +556,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white text-slate-700"
+                className="w-full sm:w-auto px-3 min-h-[44px] sm:min-h-[36px] text-sm sm:text-xs border border-slate-200 rounded-lg bg-white text-slate-700"
               >
                 <option value="all">Semua Status</option>
                 <option value="Aktif">Aktif</option>
@@ -630,21 +630,21 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                           <button
                             type="button"
                             onClick={() => setDetailAthlete(ath)}
-                            className="px-2.5 py-1.5 text-xs font-medium text-sky-700 bg-sky-50 rounded-md cursor-pointer"
+                            className="px-3 min-h-[40px] text-xs font-medium text-sky-700 bg-sky-50 rounded-lg cursor-pointer"
                           >
                             Detail
                           </button>
                           <button
                             type="button"
                             onClick={() => openEditAthlete(ath)}
-                            className="px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 rounded-md cursor-pointer"
+                            className="px-3 min-h-[40px] text-xs font-medium text-slate-700 bg-slate-100 rounded-lg cursor-pointer"
                           >
                             Edit
                           </button>
                           <button
                             type="button"
                             onClick={() => handleDeleteAthlete(ath)}
-                            className="px-2.5 py-1.5 text-xs font-medium text-red-700 bg-red-50 rounded-md cursor-pointer"
+                            className="px-3 min-h-[40px] text-xs font-medium text-red-700 bg-red-50 rounded-lg cursor-pointer"
                           >
                             Hapus
                           </button>
@@ -755,23 +755,23 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
           <SwimTimeTrendChart swimTimes={swimTimes} />
 
           {/* Swim Times Filters */}
-          <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-            <div className="relative flex-1 max-w-sm">
+          <div className="bg-white border border-slate-200 rounded-xl p-3.5 sm:p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 sm:gap-3">
+            <div className="relative flex-1 lg:max-w-sm">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 value={timeSearch}
                 onChange={(e) => setTimeSearch(e.target.value)}
                 placeholder="Cari atlet, kejuaraan, atau nomor..."
-                className="w-full pl-9 pr-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-sky-600"
+                className="w-full pl-9 pr-3 min-h-[44px] sm:min-h-[36px] text-sm sm:text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-sky-600"
               />
             </div>
 
-            <div className="flex flex-wrap items-center gap-2.5">
+            <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2.5">
               <select
                 value={strokeFilter}
                 onChange={(e) => setStrokeFilter(e.target.value)}
-                className="px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white text-slate-700"
+                className="w-full sm:w-auto px-3 min-h-[44px] sm:min-h-[36px] text-sm sm:text-xs border border-slate-200 rounded-lg bg-white text-slate-700"
               >
                 <option value="all">Semua Gaya</option>
                 {SWIM_STROKES.map((s) => (
@@ -784,7 +784,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
               <select
                 value={courseFilter}
                 onChange={(e) => setCourseFilter(e.target.value)}
-                className="px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white text-slate-700"
+                className="w-full sm:w-auto px-3 min-h-[44px] sm:min-h-[36px] text-sm sm:text-xs border border-slate-200 rounded-lg bg-white text-slate-700"
               >
                 <option value="all">Semua Kolam</option>
                 {POOL_COURSES.map((c) => (
@@ -794,12 +794,12 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                 ))}
               </select>
 
-              <label className="inline-flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 border border-slate-200 rounded-lg cursor-pointer bg-white">
+              <label className="col-span-2 sm:col-span-1 inline-flex items-center gap-2 px-3 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-slate-700 border border-slate-200 rounded-lg cursor-pointer bg-white">
                 <input
                   type="checkbox"
                   checked={onlyPB}
                   onChange={(e) => setOnlyPB(e.target.checked)}
-                  className="rounded border-slate-300 text-sky-700"
+                  className="rounded border-slate-300 text-sky-700 w-4 h-4"
                 />
                 Hanya Personal Best
               </label>
@@ -863,14 +863,14 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                           <button
                             type="button"
                             onClick={() => openEditTime(st)}
-                            className="px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 rounded-md cursor-pointer"
+                            className="px-3 min-h-[40px] text-xs font-medium text-slate-700 bg-slate-100 rounded-lg cursor-pointer"
                           >
                             Edit
                           </button>
                           <button
                             type="button"
                             onClick={() => handleDeleteTime(st)}
-                            className="px-2.5 py-1.5 text-xs font-medium text-red-700 bg-red-50 rounded-md cursor-pointer"
+                            className="px-3 min-h-[40px] text-xs font-medium text-red-700 bg-red-50 rounded-lg cursor-pointer"
                           >
                             Hapus
                           </button>
@@ -959,15 +959,15 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
 
       {/* Athlete Detail Side Drawer */}
       {detailAthlete && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 flex justify-end">
-          <div className="bg-white w-full max-w-xl h-full overflow-y-auto border-l border-slate-200 p-6 flex flex-col justify-between">
-            <div className="space-y-6">
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-[1px] flex justify-end">
+          <div className="bg-white w-full max-w-xl h-full overflow-y-auto border-l border-slate-200 p-4 sm:p-6 pb-safe flex flex-col justify-between">
+            <div className="space-y-5 sm:space-y-6">
               <div className="flex items-start justify-between gap-4 pb-4 border-b border-slate-200">
                 <div>
                   <div className="text-xs text-slate-500">
                     {detailAthlete.ageGroup} · {detailAthlete.gender} · {detailAthlete.status}
                   </div>
-                  <h2 className="font-display text-xl font-bold text-slate-900 mt-1">
+                  <h2 className="font-display text-lg sm:text-xl font-bold text-slate-900 mt-1">
                     {detailAthlete.fullName}
                   </h2>
                   <div className="text-xs text-slate-500 mt-1">
@@ -977,7 +977,8 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setDetailAthlete(null)}
-                  className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg cursor-pointer"
+                  className="p-2 text-slate-400 hover:text-slate-700 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
+                  aria-label="Tutup detail atlet"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -1101,18 +1102,20 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
         </div>
       )}
 
-      {/* Athlete Modal */}
+      {/* Athlete Modal (Bottom sheet on mobile) */}
       {athleteModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-200">
-              <h2 className="font-display text-lg font-semibold text-slate-900">
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-[1px] flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-white border border-slate-200 rounded-t-2xl sm:rounded-xl w-full max-w-lg max-h-[92vh] overflow-y-auto p-4 sm:p-6 pb-safe">
+            <div className="sm:hidden w-10 h-1 bg-slate-300 rounded-full mx-auto mb-3" />
+            <div className="flex items-center justify-between pb-3 sm:pb-4 border-b border-slate-200">
+              <h2 className="font-display text-base sm:text-lg font-semibold text-slate-900">
                 {editingAthlete ? 'Edit Data Atlet' : 'Tambah Atlet Baru'}
               </h2>
               <button
                 type="button"
                 onClick={() => setAthleteModalOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg cursor-pointer"
+                className="p-2 text-slate-400 hover:text-slate-700 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
+                aria-label="Tutup modal atlet"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1278,18 +1281,18 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                 />
               </div>
 
-              <div className="pt-4 border-t border-slate-200 flex justify-end gap-2.5">
+              <div className="pt-4 border-t border-slate-200 grid grid-cols-2 sm:flex sm:justify-end gap-2.5">
                 <button
                   type="button"
                   onClick={() => setAthleteModalOpen(false)}
-                  className="px-4 py-2 text-xs font-medium text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer"
+                  className="px-4 min-h-[44px] sm:min-h-[38px] text-xs font-medium text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
                   disabled={savingAthlete}
-                  className="px-4 py-2 text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 disabled:opacity-60 cursor-pointer"
+                  className="px-4 min-h-[44px] sm:min-h-[38px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 disabled:opacity-60 cursor-pointer"
                 >
                   {savingAthlete ? 'Menyimpan...' : 'Simpan Atlet'}
                 </button>
@@ -1299,21 +1302,23 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
         </div>
       )}
 
-      {/* SwimTime Modal */}
+      {/* SwimTime Modal (Bottom sheet on mobile) */}
       {timeModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-200">
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-[1px] flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-white border border-slate-200 rounded-t-2xl sm:rounded-xl w-full max-w-lg max-h-[92vh] overflow-y-auto p-4 sm:p-6 pb-safe">
+            <div className="sm:hidden w-10 h-1 bg-slate-300 rounded-full mx-auto mb-3" />
+            <div className="flex items-center justify-between pb-3 sm:pb-4 border-b border-slate-200">
               <div className="flex items-center gap-2">
                 <Timer className="w-5 h-5 text-sky-700" />
-                <h2 className="font-display text-lg font-semibold text-slate-900">
+                <h2 className="font-display text-base sm:text-lg font-semibold text-slate-900">
                   {editingTime ? 'Edit Catatan Waktu' : 'Catat Waktu Kejuaraan Renang'}
                 </h2>
               </div>
               <button
                 type="button"
                 onClick={() => setTimeModalOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg cursor-pointer"
+                className="p-2 text-slate-400 hover:text-slate-700 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
+                aria-label="Tutup modal waktu"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1486,18 +1491,18 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                 />
               </div>
 
-              <div className="pt-4 border-t border-slate-200 flex justify-end gap-2.5">
+              <div className="pt-4 border-t border-slate-200 grid grid-cols-2 sm:flex sm:justify-end gap-2.5">
                 <button
                   type="button"
                   onClick={() => setTimeModalOpen(false)}
-                  className="px-4 py-2 text-xs font-medium text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer"
+                  className="px-4 min-h-[44px] sm:min-h-[38px] text-xs font-medium text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
                   disabled={savingTime}
-                  className="px-4 py-2 text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 disabled:opacity-60 cursor-pointer"
+                  className="px-4 min-h-[44px] sm:min-h-[38px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 disabled:opacity-60 cursor-pointer"
                 >
                   {savingTime ? 'Menyimpan...' : 'Simpan Catatan Waktu'}
                 </button>

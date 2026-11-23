@@ -293,14 +293,14 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
   }, [attendanceMapForSession]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 sm:space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 sm:gap-4">
         <div>
-          <h1 className="font-display text-xl font-bold text-slate-900">
+          <h1 className="font-display text-lg sm:text-xl font-bold text-slate-900">
             Jadwal Latihan & Presensi Atlet
           </h1>
-          <p className="text-sm text-slate-500">
+          <p className="text-xs sm:text-sm text-slate-500">
             Atur sesi latihan mingguan per lintasan kolam, target jarak meter, dan catat kehadiran atlet.
           </p>
         </div>
@@ -308,7 +308,7 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
         <button
           type="button"
           onClick={openCreateModal}
-          className="inline-flex items-center gap-2 px-4 py-2 text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 whitespace-nowrap shrink-0 cursor-pointer self-start sm:self-auto"
+          className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 whitespace-nowrap shrink-0 cursor-pointer"
         >
           <Plus className="w-3.5 h-3.5" />
           Tambah Jadwal Latihan
@@ -316,11 +316,11 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
       </div>
 
       {/* Sub-tabs */}
-      <div className="flex items-center gap-1 p-1 bg-slate-200/70 rounded-lg w-fit max-w-full overflow-x-auto">
+      <div className="grid grid-cols-2 sm:inline-flex items-center gap-1 p-1 bg-slate-200/70 rounded-lg w-full sm:w-fit">
         <button
           type="button"
           onClick={() => setActiveTab('schedules')}
-          className={`px-4 py-2 text-xs font-semibold rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+          className={`px-3 sm:px-4 min-h-[44px] sm:min-h-[36px] text-xs font-semibold rounded-md transition-colors whitespace-nowrap truncate cursor-pointer ${
             activeTab === 'schedules'
               ? 'bg-white text-slate-900 shadow-sm'
               : 'text-slate-600 hover:text-slate-900'
@@ -331,13 +331,13 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
         <button
           type="button"
           onClick={() => setActiveTab('attendance')}
-          className={`px-4 py-2 text-xs font-semibold rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+          className={`px-3 sm:px-4 min-h-[44px] sm:min-h-[36px] text-xs font-semibold rounded-md transition-colors whitespace-nowrap truncate cursor-pointer ${
             activeTab === 'attendance'
               ? 'bg-white text-slate-900 shadow-sm'
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          Presensi Sesi Latihan
+          Presensi Sesi
         </button>
       </div>
 
@@ -347,12 +347,12 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
       {activeTab === 'schedules' ? (
         <>
           {/* Filter Bar */}
-          <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-1.5">
+          <div className="bg-white border border-slate-200 rounded-xl p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5 sm:flex-wrap sm:overflow-visible">
               <button
                 type="button"
                 onClick={() => setDayFilter('all')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer ${
+                className={`px-3 min-h-[40px] sm:min-h-[32px] text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                   dayFilter === 'all'
                     ? 'bg-slate-900 text-white'
                     : 'bg-slate-100 text-slate-600 hover:text-slate-900'
@@ -365,7 +365,7 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
                   key={d}
                   type="button"
                   onClick={() => setDayFilter(d)}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer ${
+                  className={`px-3 min-h-[40px] sm:min-h-[32px] text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                     dayFilter === d
                       ? 'bg-slate-900 text-white'
                       : 'bg-slate-100 text-slate-600 hover:text-slate-900'
@@ -379,7 +379,7 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
             <select
               value={ageFilter}
               onChange={(e) => setAgeFilter(e.target.value)}
-              className="px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white text-slate-700"
+              className="w-full sm:w-auto px-3 min-h-[44px] sm:min-h-[36px] text-sm sm:text-xs border border-slate-200 rounded-lg bg-white text-slate-700"
             >
               <option value="all">Semua Kelompok</option>
               <option value="Semua Kelompok">Semua Kelompok (Gabungan)</option>
@@ -481,7 +481,7 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
                       if (sch.sessionDate) setAttendanceDate(sch.sessionDate);
                       setActiveTab('attendance');
                     }}
-                    className="w-full py-2 text-xs font-medium text-sky-700 bg-sky-50 hover:bg-sky-100 rounded-lg transition-colors cursor-pointer"
+                    className="w-full min-h-[44px] sm:min-h-[36px] text-xs font-medium text-sky-700 bg-sky-50 hover:bg-sky-100 rounded-lg transition-colors cursor-pointer"
                   >
                     Isi Presensi Sesi Ini
                   </button>
@@ -499,16 +499,16 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
             </div>
           ) : (
             <>
-              <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="flex flex-wrap items-center gap-3 flex-1">
-                  <div className="min-w-[240px] flex-1 max-w-md">
+              <div className="bg-white border border-slate-200 rounded-xl p-3.5 sm:p-4 flex flex-col md:flex-row md:items-center justify-between gap-3.5 sm:gap-4">
+                <div className="grid grid-cols-1 sm:flex sm:flex-wrap items-center gap-3 flex-1">
+                  <div className="sm:min-w-[240px] flex-1 sm:max-w-md">
                     <label className="block text-xs font-medium text-slate-600 mb-1">
                       Pilih Sesi Latihan
                     </label>
                     <select
                       value={activeSchedule?.id || ''}
                       onChange={(e) => setSelectedScheduleId(e.target.value)}
-                      className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white text-slate-900"
+                      className="w-full px-3 min-h-[44px] sm:min-h-[36px] text-sm sm:text-xs border border-slate-200 rounded-lg bg-white text-slate-900"
                     >
                       {schedules.map((s) => (
                         <option key={s.id} value={s.id}>
@@ -525,12 +525,12 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
                       type="date"
                       value={attendanceDate}
                       onChange={(e) => setAttendanceDate(e.target.value)}
-                      className="px-3 py-2 text-xs font-mono-tabular border border-slate-200 rounded-lg"
+                      className="w-full sm:w-auto px-3 min-h-[44px] sm:min-h-[36px] text-sm sm:text-xs font-mono-tabular border border-slate-200 rounded-lg"
                     />
                   </div>
                 </div>
 
-                <div className="flex items-center gap-4 text-xs text-slate-600 font-mono-tabular">
+                <div className="grid grid-cols-4 sm:flex items-center gap-2 sm:gap-4 text-xs text-slate-600 font-mono-tabular pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 text-center sm:text-left">
                   <span className="text-emerald-700 font-semibold">
                     Hadir: {attendanceSummary.hadir}
                   </span>
@@ -587,7 +587,7 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
                                   type="button"
                                   disabled={markingId === ath.id}
                                   onClick={() => handleMarkAttendance(ath, st)}
-                                  className={`py-2 text-xs font-medium rounded-md transition-colors cursor-pointer ${
+                                  className={`min-h-[44px] text-xs font-medium rounded-md transition-colors cursor-pointer ${
                                     rec?.status === st
                                       ? 'bg-white text-slate-900 shadow-sm'
                                       : 'text-slate-600'
@@ -675,18 +675,20 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
         </div>
       )}
 
-      {/* Add/Edit Schedule Modal */}
+      {/* Add/Edit Schedule Modal (Bottom sheet on mobile) */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-200">
-              <h2 className="font-display text-lg font-semibold text-slate-900">
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-[1px] flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-white border border-slate-200 rounded-t-2xl sm:rounded-xl w-full max-w-lg max-h-[92vh] overflow-y-auto p-4 sm:p-6 pb-safe">
+            <div className="sm:hidden w-10 h-1 bg-slate-300 rounded-full mx-auto mb-3" />
+            <div className="flex items-center justify-between pb-3 sm:pb-4 border-b border-slate-200">
+              <h2 className="font-display text-base sm:text-lg font-semibold text-slate-900">
                 {editingSchedule ? 'Edit Jadwal Latihan' : 'Tambah Jadwal Latihan'}
               </h2>
               <button
                 type="button"
                 onClick={() => setModalOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg cursor-pointer"
+                className="p-2 text-slate-400 hover:text-slate-700 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
+                aria-label="Tutup modal jadwal"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -864,18 +866,18 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
                 />
               </div>
 
-              <div className="pt-4 border-t border-slate-200 flex justify-end gap-2.5">
+              <div className="pt-4 border-t border-slate-200 grid grid-cols-2 sm:flex sm:justify-end gap-2.5">
                 <button
                   type="button"
                   onClick={() => setModalOpen(false)}
-                  className="px-4 py-2 text-xs font-medium text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer"
+                  className="px-4 min-h-[44px] sm:min-h-[38px] text-xs font-medium text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
                   disabled={saving}
-                  className="px-4 py-2 text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 disabled:opacity-60 cursor-pointer"
+                  className="px-4 min-h-[44px] sm:min-h-[38px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 disabled:opacity-60 cursor-pointer"
                 >
                   {saving ? 'Menyimpan...' : 'Simpan Jadwal'}
                 </button>

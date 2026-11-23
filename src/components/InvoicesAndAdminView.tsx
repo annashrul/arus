@@ -514,28 +514,28 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 sm:space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 no-print">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 sm:gap-4 no-print">
         <div>
-          <h1 className="font-display text-xl font-bold text-slate-900">
+          <h1 className="font-display text-lg sm:text-xl font-bold text-slate-900">
             Invoice & Administrasi Klub
           </h1>
-          <p className="text-sm text-slate-500">
+          <p className="text-xs sm:text-sm text-slate-500">
             Kelola tagihan SPP bulanan, kwitansi cetak resmi, surat tugas lomba, dan profil rekening klub.
           </p>
         </div>
 
         {activeTab === 'invoices' && (
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 shrink-0">
             <button
               type="button"
-              onClick={handleExportInvoicesCSV}
-              disabled={filteredInvoices.length === 0}
-              className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 whitespace-nowrap cursor-pointer disabled:opacity-50"
+              onClick={openCreateInvoice}
+              disabled={athletes.length === 0}
+              className="col-span-2 sm:col-span-1 sm:order-3 inline-flex items-center justify-center gap-2 px-4 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 whitespace-nowrap cursor-pointer disabled:opacity-50"
             >
-              <Download className="w-3.5 h-3.5" />
-              Unduh CSV
+              <Plus className="w-3.5 h-3.5" />
+              Buat Invoice
             </button>
             <button
               type="button"
@@ -544,19 +544,19 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                 setBatchOpen(true);
               }}
               disabled={athletes.filter((a) => a.status === 'Aktif').length === 0}
-              className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 whitespace-nowrap cursor-pointer disabled:opacity-50"
+              className="sm:order-2 inline-flex items-center justify-center gap-1.5 px-3 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 whitespace-nowrap cursor-pointer disabled:opacity-50"
             >
               <Layers className="w-3.5 h-3.5 text-sky-700" />
-              Buat SPP Massal
+              SPP Massal
             </button>
             <button
               type="button"
-              onClick={openCreateInvoice}
-              disabled={athletes.length === 0}
-              className="inline-flex items-center gap-2 px-4 py-2 text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 whitespace-nowrap cursor-pointer disabled:opacity-50"
+              onClick={handleExportInvoicesCSV}
+              disabled={filteredInvoices.length === 0}
+              className="sm:order-1 inline-flex items-center justify-center gap-1.5 px-3 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 whitespace-nowrap cursor-pointer disabled:opacity-50"
             >
-              <Plus className="w-3.5 h-3.5" />
-              Buat Invoice
+              <Download className="w-3.5 h-3.5" />
+              Unduh CSV
             </button>
           </div>
         )}
@@ -568,7 +568,7 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
               setAnnError(null);
               setAnnModalOpen(true);
             }}
-            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 whitespace-nowrap cursor-pointer shrink-0"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 whitespace-nowrap cursor-pointer shrink-0"
           >
             <Plus className="w-3.5 h-3.5" />
             Buat Surat / Pengumuman
@@ -577,84 +577,84 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
       </div>
 
       {/* Sub-tabs */}
-      <div className="flex items-center gap-1 p-1 bg-slate-200/70 rounded-lg w-fit max-w-full overflow-x-auto no-print">
+      <div className="flex items-center gap-1 p-1 bg-slate-200/70 rounded-lg w-full sm:w-fit overflow-x-auto no-scrollbar no-print">
         <button
           type="button"
           onClick={() => setActiveTab('invoices')}
-          className={`px-4 py-2 text-xs font-semibold rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+          className={`px-3.5 sm:px-4 min-h-[44px] sm:min-h-[36px] text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
             activeTab === 'invoices'
               ? 'bg-white text-slate-900 shadow-sm'
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          Invoice & Tagihan ({invoices.length})
+          Invoice ({invoices.length})
         </button>
         <button
           type="button"
           onClick={() => setActiveTab('letters')}
-          className={`px-4 py-2 text-xs font-semibold rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+          className={`px-3.5 sm:px-4 min-h-[44px] sm:min-h-[36px] text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
             activeTab === 'letters'
               ? 'bg-white text-slate-900 shadow-sm'
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          Surat Tugas & Pengumuman ({announcements.length})
+          Surat & Info ({announcements.length})
         </button>
         <button
           type="button"
           onClick={() => setActiveTab('settings')}
-          className={`px-4 py-2 text-xs font-semibold rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+          className={`px-3.5 sm:px-4 min-h-[44px] sm:min-h-[36px] text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
             activeTab === 'settings'
               ? 'bg-white text-slate-900 shadow-sm'
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          Profil & Rekening Klub
+          Profil & Rekening
         </button>
       </div>
 
       {activeTab === 'invoices' && (
         <div className="space-y-5 no-print">
           {/* Summary KPI */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="bg-white border border-slate-200 rounded-xl p-5">
-              <span className="text-xs text-slate-500">Total Sudah Lunas</span>
-              <div className="font-mono-tabular text-2xl font-bold text-emerald-700 mt-1">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
+            <div className="bg-white border border-slate-200 rounded-xl p-3.5 sm:p-5 min-w-0">
+              <span className="text-[11px] sm:text-xs text-slate-500 block truncate">Total Lunas</span>
+              <div className="font-mono-tabular text-base sm:text-2xl font-bold text-emerald-700 mt-1 truncate">
                 {formatRupiah(invoiceTotals.paid)}
               </div>
             </div>
-            <div className="bg-white border border-slate-200 rounded-xl p-5">
-              <span className="text-xs text-slate-500">Menunggu Pembayaran</span>
-              <div className="font-mono-tabular text-2xl font-bold text-amber-700 mt-1">
+            <div className="bg-white border border-slate-200 rounded-xl p-3.5 sm:p-5 min-w-0">
+              <span className="text-[11px] sm:text-xs text-slate-500 block truncate">Menunggu Bayar</span>
+              <div className="font-mono-tabular text-base sm:text-2xl font-bold text-amber-700 mt-1 truncate">
                 {formatRupiah(invoiceTotals.pending)}
               </div>
             </div>
-            <div className="bg-white border border-slate-200 rounded-xl p-5">
-              <span className="text-xs text-slate-500">Jatuh Tempo</span>
-              <div className="font-mono-tabular text-2xl font-bold text-red-700 mt-1">
+            <div className="col-span-2 sm:col-span-1 bg-white border border-slate-200 rounded-xl p-3.5 sm:p-5 min-w-0">
+              <span className="text-[11px] sm:text-xs text-slate-500 block truncate">Jatuh Tempo</span>
+              <div className="font-mono-tabular text-xl sm:text-2xl font-bold text-red-700 mt-1 truncate">
                 {formatRupiah(invoiceTotals.overdue)}
               </div>
             </div>
           </div>
 
           {/* Filter Bar */}
-          <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="relative flex-1 max-w-sm">
+          <div className="bg-white border border-slate-200 rounded-xl p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="relative flex-1 sm:max-w-sm">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 value={invSearch}
                 onChange={(e) => setInvSearch(e.target.value)}
                 placeholder="Cari nomor invoice, nama atlet, periode..."
-                className="w-full pl-9 pr-3 py-2 text-xs border border-slate-200 rounded-lg"
+                className="w-full pl-9 pr-3 min-h-[44px] sm:min-h-[36px] text-sm sm:text-xs border border-slate-200 rounded-lg"
               />
             </div>
 
-            <div className="flex flex-wrap items-center gap-1.5">
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5 sm:flex-wrap sm:overflow-visible">
               <button
                 type="button"
                 onClick={() => setStatusFilter('all')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md cursor-pointer ${
+                className={`px-3 min-h-[40px] sm:min-h-[32px] text-xs font-medium rounded-md whitespace-nowrap shrink-0 cursor-pointer ${
                   statusFilter === 'all'
                     ? 'bg-slate-900 text-white'
                     : 'bg-slate-100 text-slate-600'
@@ -667,7 +667,7 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                   key={st}
                   type="button"
                   onClick={() => setStatusFilter(st)}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-md cursor-pointer ${
+                  className={`px-3 min-h-[40px] sm:min-h-[32px] text-xs font-medium rounded-md whitespace-nowrap shrink-0 cursor-pointer ${
                     statusFilter === st
                       ? 'bg-slate-900 text-white'
                       : 'bg-slate-100 text-slate-600'
@@ -739,7 +739,7 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                                 setPayMethod('Transfer Bank');
                                 setPayNotes('');
                               }}
-                              className="px-2.5 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 rounded-md cursor-pointer"
+                              className="px-3 min-h-[40px] text-xs font-medium text-emerald-700 bg-emerald-50 rounded-lg cursor-pointer"
                             >
                               Tandai Lunas
                             </button>
@@ -750,14 +750,14 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                               setCopiedWa(false);
                               setPreviewInv(inv);
                             }}
-                            className="px-2.5 py-1.5 text-xs font-medium text-sky-700 bg-sky-50 rounded-md cursor-pointer"
+                            className="px-3 min-h-[40px] text-xs font-medium text-sky-700 bg-sky-50 rounded-lg cursor-pointer"
                           >
                             Cetak
                           </button>
                           <button
                             type="button"
                             onClick={() => handleDeleteInvoice(inv)}
-                            className="px-2.5 py-1.5 text-xs font-medium text-red-700 bg-red-50 rounded-md cursor-pointer"
+                            className="px-3 min-h-[40px] text-xs font-medium text-red-700 bg-red-50 rounded-lg cursor-pointer"
                           >
                             Hapus
                           </button>
@@ -940,7 +940,7 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
       {activeTab === 'settings' && (
         <form
           onSubmit={handleSaveSettings}
-          className="bg-white border border-slate-200 rounded-xl p-6 max-w-2xl space-y-5 no-print"
+          className="bg-white border border-slate-200 rounded-xl p-4 sm:p-6 max-w-2xl space-y-5 no-print"
         >
           <div className="flex items-center gap-3 pb-4 border-b border-slate-200">
             <Building2 className="w-5 h-5 text-sky-700" />
@@ -1104,7 +1104,7 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
             <button
               type="submit"
               disabled={savingSettings}
-              className="px-5 py-2.5 text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 disabled:opacity-60 cursor-pointer"
+              className="w-full sm:w-auto px-5 min-h-[44px] sm:min-h-[38px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 disabled:opacity-60 cursor-pointer"
             >
               {savingSettings ? 'Menyimpan...' : 'Simpan Pengaturan Klub'}
             </button>
@@ -1112,18 +1112,20 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
         </form>
       )}
 
-      {/* Create Single Invoice Modal */}
+      {/* Create Single Invoice Modal (Bottom sheet on mobile) */}
       {createInvOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4 no-print">
-          <div className="bg-white border border-slate-200 rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-200">
-              <h2 className="font-display text-lg font-semibold text-slate-900">
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-[1px] flex items-end sm:items-center justify-center p-0 sm:p-4 no-print">
+          <div className="bg-white border border-slate-200 rounded-t-2xl sm:rounded-xl w-full max-w-lg max-h-[92vh] overflow-y-auto p-4 sm:p-6 pb-safe">
+            <div className="sm:hidden w-10 h-1 bg-slate-300 rounded-full mx-auto mb-3" />
+            <div className="flex items-center justify-between pb-3 sm:pb-4 border-b border-slate-200">
+              <h2 className="font-display text-base sm:text-lg font-semibold text-slate-900">
                 Buat Invoice Tagihan Baru
               </h2>
               <button
                 type="button"
                 onClick={() => setCreateInvOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg cursor-pointer"
+                className="p-2 text-slate-400 hover:text-slate-700 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
+                aria-label="Tutup modal invoice"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1239,18 +1241,18 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                 />
               </div>
 
-              <div className="pt-4 border-t border-slate-200 flex justify-end gap-2.5">
+              <div className="pt-4 border-t border-slate-200 grid grid-cols-2 sm:flex sm:justify-end gap-2.5">
                 <button
                   type="button"
                   onClick={() => setCreateInvOpen(false)}
-                  className="px-4 py-2 text-xs font-medium text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer"
+                  className="px-4 min-h-[44px] sm:min-h-[38px] text-xs font-medium text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
                   disabled={savingInv}
-                  className="px-4 py-2 text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 disabled:opacity-60 cursor-pointer"
+                  className="px-4 min-h-[44px] sm:min-h-[38px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 disabled:opacity-60 cursor-pointer"
                 >
                   {savingInv ? 'Menerbitkan...' : 'Terbitkan Invoice'}
                 </button>
@@ -1260,18 +1262,20 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
         </div>
       )}
 
-      {/* Batch SPP Modal */}
+      {/* Batch SPP Modal (Bottom sheet on mobile) */}
       {batchOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4 no-print">
-          <div className="bg-white border border-slate-200 rounded-xl w-full max-w-md p-6">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-200">
-              <h2 className="font-display text-lg font-semibold text-slate-900">
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-[1px] flex items-end sm:items-center justify-center p-0 sm:p-4 no-print">
+          <div className="bg-white border border-slate-200 rounded-t-2xl sm:rounded-xl w-full max-w-md max-h-[92vh] overflow-y-auto p-4 sm:p-6 pb-safe">
+            <div className="sm:hidden w-10 h-1 bg-slate-300 rounded-full mx-auto mb-3" />
+            <div className="flex items-center justify-between pb-3 sm:pb-4 border-b border-slate-200">
+              <h2 className="font-display text-base sm:text-lg font-semibold text-slate-900">
                 Terbitkan Tagihan SPP Massal
               </h2>
               <button
                 type="button"
                 onClick={() => setBatchOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg cursor-pointer"
+                className="p-2 text-slate-400 hover:text-slate-700 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
+                aria-label="Tutup modal SPP massal"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1315,20 +1319,20 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                 />
               </div>
 
-              <div className="pt-4 border-t border-slate-200 flex justify-end gap-2.5">
+              <div className="pt-4 border-t border-slate-200 grid grid-cols-2 sm:flex sm:justify-end gap-2.5">
                 <button
                   type="button"
                   onClick={() => setBatchOpen(false)}
-                  className="px-4 py-2 text-xs font-medium text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer"
+                  className="px-4 min-h-[44px] sm:min-h-[38px] text-xs font-medium text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
                   disabled={savingBatch}
-                  className="px-4 py-2 text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 disabled:opacity-60 cursor-pointer"
+                  className="px-4 min-h-[44px] sm:min-h-[38px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 disabled:opacity-60 cursor-pointer"
                 >
-                  {savingBatch ? 'Memproses...' : 'Generate Tagihan Massal'}
+                  {savingBatch ? 'Memproses...' : 'Generate SPP Massal'}
                 </button>
               </div>
             </form>
@@ -1336,18 +1340,20 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
         </div>
       )}
 
-      {/* Settle / Pay Invoice Modal */}
+      {/* Settle / Pay Invoice Modal (Bottom sheet on mobile) */}
       {payModalInv && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4 no-print">
-          <div className="bg-white border border-slate-200 rounded-xl w-full max-w-md p-6">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-200">
-              <h2 className="font-display text-lg font-semibold text-slate-900">
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-[1px] flex items-end sm:items-center justify-center p-0 sm:p-4 no-print">
+          <div className="bg-white border border-slate-200 rounded-t-2xl sm:rounded-xl w-full max-w-md max-h-[92vh] overflow-y-auto p-4 sm:p-6 pb-safe">
+            <div className="sm:hidden w-10 h-1 bg-slate-300 rounded-full mx-auto mb-3" />
+            <div className="flex items-center justify-between pb-3 sm:pb-4 border-b border-slate-200">
+              <h2 className="font-display text-base sm:text-lg font-semibold text-slate-900">
                 Catat Pelunasan Invoice
               </h2>
               <button
                 type="button"
                 onClick={() => setPayModalInv(null)}
-                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg cursor-pointer"
+                className="p-2 text-slate-400 hover:text-slate-700 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
+                aria-label="Tutup modal pelunasan"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1416,20 +1422,20 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                 />
               </div>
 
-              <div className="pt-4 border-t border-slate-200 flex justify-end gap-2.5">
+              <div className="pt-4 border-t border-slate-200 grid grid-cols-2 sm:flex sm:justify-end gap-2.5">
                 <button
                   type="button"
                   onClick={() => setPayModalInv(null)}
-                  className="px-4 py-2 text-xs font-medium text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer"
+                  className="px-4 min-h-[44px] sm:min-h-[38px] text-xs font-medium text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
                   disabled={paying}
-                  className="px-4 py-2 text-xs font-medium text-white bg-emerald-700 rounded-lg hover:bg-emerald-800 disabled:opacity-60 cursor-pointer"
+                  className="px-4 min-h-[44px] sm:min-h-[38px] text-xs font-medium text-white bg-emerald-700 rounded-lg hover:bg-emerald-800 disabled:opacity-60 cursor-pointer"
                 >
-                  {paying ? 'Memproses...' : 'Konfirmasi Lunas & Catat Kas'}
+                  {paying ? 'Memproses...' : 'Konfirmasi Lunas'}
                 </button>
               </div>
             </form>
@@ -1439,32 +1445,32 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
 
       {/* Printable Official Invoice Preview Modal */}
       {previewInv && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white border border-slate-200 rounded-xl w-full max-w-2xl p-8 space-y-6 print-only-container">
-            <div className="flex items-center justify-between gap-4 no-print pb-4 border-b border-slate-200">
-              <div className="flex items-center gap-2">
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-[1px] flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-y-auto">
+          <div className="bg-white border border-slate-200 rounded-t-2xl sm:rounded-xl w-full max-w-2xl max-h-[92vh] overflow-y-auto p-4 sm:p-8 pb-safe space-y-5 sm:space-y-6 print-only-container">
+            <div className="flex flex-wrap items-center justify-between gap-2 no-print pb-3 sm:pb-4 border-b border-slate-200">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={() => window.print()}
-                  className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 cursor-pointer"
+                  className="inline-flex items-center gap-2 px-3.5 min-h-[40px] text-xs font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 cursor-pointer"
                 >
                   <Printer className="w-3.5 h-3.5" />
-                  Cetak / Simpan PDF
+                  Cetak / PDF
                 </button>
                 <button
                   type="button"
                   onClick={() => handleCopyWhatsAppReminder(previewInv)}
-                  className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-medium text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer"
+                  className="inline-flex items-center gap-2 px-3.5 min-h-[40px] text-xs font-medium text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer"
                 >
                   {copiedWa ? (
                     <>
                       <Check className="w-3.5 h-3.5 text-emerald-600" />
-                      Tersalin ke Clipboard
+                      Tersalin
                     </>
                   ) : (
                     <>
                       <Copy className="w-3.5 h-3.5" />
-                      Salin Teks WhatsApp
+                      Salin WhatsApp
                     </>
                   )}
                 </button>
@@ -1472,31 +1478,32 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
               <button
                 type="button"
                 onClick={() => setPreviewInv(null)}
-                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg cursor-pointer"
+                className="p-2 text-slate-400 hover:text-slate-700 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
+                aria-label="Tutup pratinjau invoice"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Official Printable Invoice Body */}
-            <div className="space-y-6">
-              <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-6">
+            <div className="space-y-5 sm:space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 border-b border-slate-200 pb-5 sm:pb-6">
                 <div className="flex items-center gap-3.5">
                   <img
                     src="/src/assets/images/swim_club_emblem_1795440060748.jpg"
                     alt={club.name}
                     referrerPolicy="no-referrer"
-                    className="w-12 h-12 rounded-lg object-cover border border-slate-200"
+                    className="w-11 h-11 sm:w-12 sm:h-12 rounded-lg object-cover border border-slate-200 shrink-0"
                   />
                   <div>
-                    <h2 className="font-display text-lg font-bold text-slate-900">{club.name}</h2>
+                    <h2 className="font-display text-base sm:text-lg font-bold text-slate-900">{club.name}</h2>
                     <p className="text-xs text-slate-500">
                       {club.address || club.city}
                       {club.phone ? ` · ${club.phone}` : ''}
                     </p>
                   </div>
                 </div>
-                <div className="text-right">
+                <div className="sm:text-right">
                   <div className="text-xs font-semibold text-slate-500">INVOICE RESMI</div>
                   <div className="font-mono-tabular text-sm font-bold text-slate-900 mt-0.5">
                     {previewInv.invoiceNumber}
@@ -1504,7 +1511,7 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-6 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 text-xs">
                 <div>
                   <span className="text-slate-500 block">Ditagihkan Kepada</span>
                   <div className="font-semibold text-slate-900 text-sm mt-1">
@@ -1514,7 +1521,7 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                     Wali: {previewInv.parentName || '-'} ({previewInv.parentPhone || '-'})
                   </div>
                 </div>
-                <div className="text-right">
+                <div className="sm:text-right">
                   <span className="text-slate-500 block">Status & Jatuh Tempo</span>
                   <div
                     className={`text-sm font-bold mt-1 ${
@@ -1583,18 +1590,20 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
         </div>
       )}
 
-      {/* Create Announcement Modal */}
+      {/* Create Announcement Modal (Bottom sheet on mobile) */}
       {annModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4 no-print">
-          <div className="bg-white border border-slate-200 rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-200">
-              <h2 className="font-display text-lg font-semibold text-slate-900">
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-[1px] flex items-end sm:items-center justify-center p-0 sm:p-4 no-print">
+          <div className="bg-white border border-slate-200 rounded-t-2xl sm:rounded-xl w-full max-w-lg max-h-[92vh] overflow-y-auto p-4 sm:p-6 pb-safe">
+            <div className="sm:hidden w-10 h-1 bg-slate-300 rounded-full mx-auto mb-3" />
+            <div className="flex items-center justify-between pb-3 sm:pb-4 border-b border-slate-200">
+              <h2 className="font-display text-base sm:text-lg font-semibold text-slate-900">
                 Buat Surat Administrasi / Pengumuman
               </h2>
               <button
                 type="button"
                 onClick={() => setAnnModalOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg cursor-pointer"
+                className="p-2 text-slate-400 hover:text-slate-700 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
+                aria-label="Tutup modal surat"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1694,18 +1703,18 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                 />
               </div>
 
-              <div className="pt-4 border-t border-slate-200 flex justify-end gap-2.5">
+              <div className="pt-4 border-t border-slate-200 grid grid-cols-2 sm:flex sm:justify-end gap-2.5">
                 <button
                   type="button"
                   onClick={() => setAnnModalOpen(false)}
-                  className="px-4 py-2 text-xs font-medium text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer"
+                  className="px-4 min-h-[44px] sm:min-h-[38px] text-xs font-medium text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
                   disabled={savingAnn}
-                  className="px-4 py-2 text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 disabled:opacity-60 cursor-pointer"
+                  className="px-4 min-h-[44px] sm:min-h-[38px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 disabled:opacity-60 cursor-pointer"
                 >
                   {savingAnn ? 'Menyimpan...' : 'Simpan Dokumen'}
                 </button>
@@ -1717,13 +1726,13 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
 
       {/* Printable Announcement Modal */}
       {previewAnn && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white border border-slate-200 rounded-xl w-full max-w-2xl p-8 space-y-6 print-only-container">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-200 no-print">
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-[1px] flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-y-auto">
+          <div className="bg-white border border-slate-200 rounded-t-2xl sm:rounded-xl w-full max-w-2xl max-h-[92vh] overflow-y-auto p-4 sm:p-8 pb-safe space-y-5 sm:space-y-6 print-only-container">
+            <div className="flex items-center justify-between pb-3 sm:pb-4 border-b border-slate-200 no-print">
               <button
                 type="button"
                 onClick={() => window.print()}
-                className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 cursor-pointer"
+                className="inline-flex items-center gap-2 px-3.5 min-h-[40px] text-xs font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 cursor-pointer"
               >
                 <Printer className="w-3.5 h-3.5" />
                 Cetak Dokumen
@@ -1731,7 +1740,8 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
               <button
                 type="button"
                 onClick={() => setPreviewAnn(null)}
-                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg cursor-pointer"
+                className="p-2 text-slate-400 hover:text-slate-700 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
+                aria-label="Tutup pratinjau dokumen"
               >
                 <X className="w-5 h-5" />
               </button>

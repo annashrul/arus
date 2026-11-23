@@ -231,75 +231,75 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 sm:space-y-6">
       {/* Top Action & Summary */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 sm:gap-4">
         <div>
-          <h1 className="font-display text-xl font-bold text-slate-900">
+          <h1 className="font-display text-lg sm:text-xl font-bold text-slate-900">
             Catatan Keuangan Klub
           </h1>
-          <p className="text-sm text-slate-500">
+          <p className="text-xs sm:text-sm text-slate-500">
             Buku kas pemasukan iuran SPP, sponsor, sewa kolam, honorarium pelatih, dan operasional kejuaraan.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 shrink-0">
           <button
             type="button"
-            onClick={handleExportCSV}
-            disabled={filtered.length === 0}
-            className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50"
+            onClick={() => openCreateModal('pemasukan')}
+            className="col-span-2 sm:col-span-1 sm:order-3 inline-flex items-center justify-center gap-2 px-4 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
           >
-            <Download className="w-3.5 h-3.5" />
-            Unduh CSV
+            <Plus className="w-3.5 h-3.5" />
+            Catat Pemasukan
           </button>
           <button
             type="button"
             onClick={() => openCreateModal('pengeluaran')}
-            className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            className="sm:order-2 inline-flex items-center justify-center gap-1.5 px-3.5 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5 text-red-600" />
-            Catat Pengeluaran
+            Pengeluaran
           </button>
           <button
             type="button"
-            onClick={() => openCreateModal('pemasukan')}
-            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            onClick={handleExportCSV}
+            disabled={filtered.length === 0}
+            className="sm:order-1 inline-flex items-center justify-center gap-1.5 px-3.5 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50"
           >
-            <Plus className="w-3.5 h-3.5" />
-            Catat Pemasukan
+            <Download className="w-3.5 h-3.5" />
+            Unduh CSV
           </button>
         </div>
       </div>
 
       {/* 3-Column Financial Totals */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white border border-slate-200 rounded-xl p-5">
-          <div className="flex items-center justify-between text-xs text-slate-500 mb-2">
-            <span>Total Pemasukan (Filter Aktif)</span>
-            <ArrowDownLeft className="w-4 h-4 text-emerald-600" />
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
+        <div className="bg-white border border-slate-200 rounded-xl p-3.5 sm:p-5 min-w-0">
+          <div className="flex items-center justify-between text-[11px] sm:text-xs text-slate-500 mb-1.5 sm:mb-2 gap-1">
+            <span className="truncate">Total Pemasukan</span>
+            <ArrowDownLeft className="w-4 h-4 text-emerald-600 shrink-0" />
           </div>
-          <div className="font-mono-tabular text-2xl font-bold text-emerald-700">
+          <div className="font-mono-tabular text-base sm:text-2xl font-bold text-emerald-700 truncate">
             {formatRupiah(summary.totalIncome)}
           </div>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-xl p-5">
-          <div className="flex items-center justify-between text-xs text-slate-500 mb-2">
-            <span>Total Pengeluaran (Filter Aktif)</span>
-            <ArrowUpRight className="w-4 h-4 text-red-600" />
+        <div className="bg-white border border-slate-200 rounded-xl p-3.5 sm:p-5 min-w-0">
+          <div className="flex items-center justify-between text-[11px] sm:text-xs text-slate-500 mb-1.5 sm:mb-2 gap-1">
+            <span className="truncate">Total Pengeluaran</span>
+            <ArrowUpRight className="w-4 h-4 text-red-600 shrink-0" />
           </div>
-          <div className="font-mono-tabular text-2xl font-bold text-red-700">
+          <div className="font-mono-tabular text-base sm:text-2xl font-bold text-red-700 truncate">
             {formatRupiah(summary.totalExpense)}
           </div>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-xl p-5">
-          <div className="flex items-center justify-between text-xs text-slate-500 mb-2">
+        <div className="col-span-2 sm:col-span-1 bg-white border border-slate-200 rounded-xl p-3.5 sm:p-5 min-w-0">
+          <div className="flex items-center justify-between text-[11px] sm:text-xs text-slate-500 mb-1.5 sm:mb-2">
             <span>Selisih / Saldo Kas</span>
             <span className="font-mono-tabular text-slate-400">{filtered.length} transaksi</span>
           </div>
           <div
-            className={`font-mono-tabular text-2xl font-bold ${
+            className={`font-mono-tabular text-xl sm:text-2xl font-bold truncate ${
               summary.netBalance >= 0 ? 'text-slate-900' : 'text-red-700'
             }`}
           >
@@ -340,8 +340,8 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
       />
 
       {/* Filter Bar */}
-      <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-        <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg self-start">
+      <div className="bg-white border border-slate-200 rounded-xl p-3.5 sm:p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+        <div className="grid grid-cols-3 sm:inline-flex items-center gap-1 p-1 bg-slate-100 rounded-lg w-full sm:w-auto">
           {(
             [
               { id: 'all', label: 'Semua' },
@@ -353,7 +353,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
               key={tab.id}
               type="button"
               onClick={() => setFilterType(tab.id)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+              className={`px-3 min-h-[40px] sm:min-h-[32px] text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                 filterType === tab.id
                   ? 'bg-white text-slate-900 shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
@@ -364,21 +364,21 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
           ))}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5 flex-1 lg:justify-end">
-          <div className="relative min-w-[200px] flex-1 sm:flex-initial">
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2.5 flex-1 lg:justify-end">
+          <div className="relative col-span-2 sm:min-w-[200px] sm:flex-1 sm:max-w-xs">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Cari keterangan, atlet, ref..."
-              className="w-full pl-9 pr-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-sky-600"
+              className="w-full pl-9 pr-3 min-h-[44px] sm:min-h-[36px] text-sm sm:text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-sky-600"
             />
           </div>
           <select
             value={filterCategory}
             onChange={(e) => setFilterCategory(e.target.value)}
-            className="px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white text-slate-700 focus:outline-none focus:border-sky-600"
+            className="w-full sm:w-auto px-3 min-h-[44px] sm:min-h-[36px] text-sm sm:text-xs border border-slate-200 rounded-lg bg-white text-slate-700 focus:outline-none focus:border-sky-600"
           >
             <option value="all">Semua Kategori</option>
             {TRANSACTION_CATEGORIES.map((c) => (
@@ -391,14 +391,14 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
             type="month"
             value={monthFilter}
             onChange={(e) => setMonthFilter(e.target.value)}
-            className="px-3 py-2 text-xs font-mono-tabular border border-slate-200 rounded-lg bg-white text-slate-700 focus:outline-none focus:border-sky-600"
+            className="w-full sm:w-auto px-3 min-h-[44px] sm:min-h-[36px] text-sm sm:text-xs font-mono-tabular border border-slate-200 rounded-lg bg-white text-slate-700 focus:outline-none focus:border-sky-600"
             aria-label="Filter bulan transaksi"
           />
           {monthFilter && (
             <button
               type="button"
               onClick={() => setMonthFilter('')}
-              className="text-xs text-sky-700 hover:underline cursor-pointer"
+              className="col-span-2 sm:col-span-1 text-xs text-sky-700 hover:underline cursor-pointer min-h-[36px]"
             >
               Reset Bulan
             </button>
@@ -461,14 +461,14 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                       <button
                         type="button"
                         onClick={() => openEditModal(tx)}
-                        className="px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 rounded-md cursor-pointer"
+                        className="px-3 min-h-[40px] text-xs font-medium text-slate-700 bg-slate-100 rounded-lg cursor-pointer"
                       >
                         Edit
                       </button>
                       <button
                         type="button"
                         onClick={() => handleDelete(tx)}
-                        className="px-2.5 py-1.5 text-xs font-medium text-red-700 bg-red-50 rounded-md cursor-pointer"
+                        className="px-3 min-h-[40px] text-xs font-medium text-red-700 bg-red-50 rounded-lg cursor-pointer"
                       >
                         Hapus
                       </button>
@@ -551,18 +551,20 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
         )}
       </div>
 
-      {/* Add / Edit Transaction Modal */}
+      {/* Add / Edit Transaction Modal (Bottom sheet on mobile) */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-200">
-              <h2 className="font-display text-lg font-semibold text-slate-900">
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-[1px] flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-white border border-slate-200 rounded-t-2xl sm:rounded-xl w-full max-w-lg max-h-[92vh] overflow-y-auto p-4 sm:p-6 pb-safe">
+            <div className="sm:hidden w-10 h-1 bg-slate-300 rounded-full mx-auto mb-3" />
+            <div className="flex items-center justify-between pb-3 sm:pb-4 border-b border-slate-200">
+              <h2 className="font-display text-base sm:text-lg font-semibold text-slate-900">
                 {editingTx ? 'Edit Catatan Transaksi' : 'Catat Transaksi Keuangan'}
               </h2>
               <button
                 type="button"
                 onClick={() => setModalOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg cursor-pointer"
+                className="p-2 text-slate-400 hover:text-slate-700 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
+                aria-label="Tutup modal"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -709,18 +711,18 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-slate-200 flex items-center justify-end gap-2.5">
+              <div className="pt-4 border-t border-slate-200 grid grid-cols-2 sm:flex sm:items-center sm:justify-end gap-2.5">
                 <button
                   type="button"
                   onClick={() => setModalOpen(false)}
-                  className="px-4 py-2 text-xs font-medium text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer"
+                  className="px-4 min-h-[44px] sm:min-h-[38px] text-xs font-medium text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
                   disabled={saving}
-                  className="px-4 py-2 text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 disabled:opacity-60 cursor-pointer"
+                  className="px-4 min-h-[44px] sm:min-h-[38px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 disabled:opacity-60 cursor-pointer"
                 >
                   {saving ? 'Menyimpan...' : editingTx ? 'Simpan Perubahan' : 'Simpan Transaksi'}
                 </button>

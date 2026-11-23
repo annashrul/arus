@@ -399,7 +399,7 @@ export const SwimTimeTrendChart: React.FC<SwimTimeTrendChartProps> = ({
             setSelectedKey(e.target.value);
             setActivePointIdx(null);
           }}
-          className="px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white text-slate-800 max-w-full sm:max-w-xs"
+          className="w-full sm:w-auto px-3 min-h-[44px] sm:min-h-[36px] text-sm sm:text-xs border border-slate-200 rounded-lg bg-white text-slate-800 sm:max-w-xs"
         >
           {combos.map((c) => (
             <option key={c.key} value={c.key}>

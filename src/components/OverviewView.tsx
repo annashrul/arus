@@ -120,15 +120,15 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
     invoices.length === 0;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-5 sm:space-y-7">
       {/* Header Banner / Quick Empty Prompt */}
       {isEmptyClub && onLoadSampleData && (
-        <div className="bg-white border border-slate-200 rounded-xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="space-y-1">
-            <h2 className="font-display text-lg font-semibold text-slate-900">
+            <h2 className="font-display text-base sm:text-lg font-semibold text-slate-900">
               Workspace {club.name} Siap Digunakan
             </h2>
-            <p className="text-sm text-slate-600">
+            <p className="text-xs sm:text-sm text-slate-600">
               Belum ada data atlet, transaksi kas, atau jadwal latihan. Anda dapat mulai mengisi secara manual atau memuat data contoh klub renang Indonesia.
             </p>
           </div>
@@ -136,85 +136,83 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
             type="button"
             onClick={onLoadSampleData}
             disabled={seedingSample}
-            className="px-4 py-2.5 bg-sky-700 text-white text-sm font-medium rounded-lg hover:bg-sky-800 transition-colors whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-60"
+            className="w-full sm:w-auto px-4 min-h-[44px] bg-sky-700 text-white text-sm sm:text-xs font-medium rounded-lg hover:bg-sky-800 transition-colors whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-60"
           >
             {seedingSample ? 'Memuat Data...' : 'Muat Data Contoh Klub'}
           </button>
         </div>
       )}
 
-      {/* 4-Column KPI Strip */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      {/* 4-Column KPI Strip (2x2 on mobile for compact scanning) */}
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
         <button
           type="button"
           onClick={() => onNavigate('finance')}
-          className="text-left bg-white border border-slate-200 rounded-xl p-5 hover:border-slate-300 transition-colors cursor-pointer"
+          className="text-left bg-white border border-slate-200 rounded-xl p-3.5 sm:p-5 hover:border-slate-300 transition-colors cursor-pointer min-w-0"
         >
-          <div className="flex items-center justify-between text-xs text-slate-500 mb-3">
-            <span>Saldo Kas Klub</span>
-            <TrendingUp className="w-4 h-4 text-emerald-600" />
+          <div className="flex items-center justify-between text-[11px] sm:text-xs text-slate-500 mb-2 sm:mb-3 gap-1">
+            <span className="truncate">Saldo Kas Klub</span>
+            <TrendingUp className="w-4 h-4 text-emerald-600 shrink-0" />
           </div>
-          <div className="font-mono-tabular text-2xl font-bold text-slate-900">
+          <div className="font-mono-tabular text-base sm:text-2xl font-bold text-slate-900 truncate">
             {formatRupiah(financeTotals.balance)}
           </div>
-          <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
-            <span>Masuk {formatRupiah(financeTotals.income)}</span>
-            <span aria-hidden="true">·</span>
-            <span>Keluar {formatRupiah(financeTotals.expense)}</span>
+          <div className="mt-1.5 sm:mt-2 flex flex-wrap items-center gap-x-1.5 text-[11px] sm:text-xs text-slate-500">
+            <span className="truncate">Masuk {formatRupiah(financeTotals.income)}</span>
           </div>
         </button>
 
         <button
           type="button"
           onClick={() => onNavigate('athletes')}
-          className="text-left bg-white border border-slate-200 rounded-xl p-5 hover:border-slate-300 transition-colors cursor-pointer"
+          className="text-left bg-white border border-slate-200 rounded-xl p-3.5 sm:p-5 hover:border-slate-300 transition-colors cursor-pointer min-w-0"
         >
-          <div className="flex items-center justify-between text-xs text-slate-500 mb-3">
-            <span>Atlet Aktif & Rekor PB</span>
-            <Users className="w-4 h-4 text-sky-700" />
+          <div className="flex items-center justify-between text-[11px] sm:text-xs text-slate-500 mb-2 sm:mb-3 gap-1">
+            <span className="truncate">Atlet Aktif & PB</span>
+            <Users className="w-4 h-4 text-sky-700 shrink-0" />
           </div>
-          <div className="font-mono-tabular text-2xl font-bold text-slate-900">
-            {activeAthletesCount} <span className="text-sm font-normal text-slate-500">atlet aktif</span>
+          <div className="font-mono-tabular text-base sm:text-2xl font-bold text-slate-900">
+            {activeAthletesCount} <span className="text-xs sm:text-sm font-normal text-slate-500">atlet</span>
           </div>
-          <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
-            <span>Total {athletes.length} terdaftar</span>
+          <div className="mt-1.5 sm:mt-2 flex flex-wrap items-center gap-x-1.5 text-[11px] sm:text-xs text-slate-500">
+            <span>{athletes.length} total</span>
             <span aria-hidden="true">·</span>
-            <span>{personalBestCount} rekor PB</span>
+            <span>{personalBestCount} PB</span>
           </div>
         </button>
 
         <button
           type="button"
           onClick={() => onNavigate('invoices')}
-          className="text-left bg-white border border-slate-200 rounded-xl p-5 hover:border-slate-300 transition-colors cursor-pointer"
+          className="text-left bg-white border border-slate-200 rounded-xl p-3.5 sm:p-5 hover:border-slate-300 transition-colors cursor-pointer min-w-0"
         >
-          <div className="flex items-center justify-between text-xs text-slate-500 mb-3">
-            <span>Tagihan Belum Lunas</span>
-            <Receipt className="w-4 h-4 text-amber-600" />
+          <div className="flex items-center justify-between text-[11px] sm:text-xs text-slate-500 mb-2 sm:mb-3 gap-1">
+            <span className="truncate">Tagihan Tertunda</span>
+            <Receipt className="w-4 h-4 text-amber-600 shrink-0" />
           </div>
-          <div className="font-mono-tabular text-2xl font-bold text-slate-900">
+          <div className="font-mono-tabular text-base sm:text-2xl font-bold text-slate-900 truncate">
             {formatRupiah(unpaidTotal)}
           </div>
-          <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
-            <span>{unpaidInvoices.length} invoice tertunda</span>
+          <div className="mt-1.5 sm:mt-2 flex flex-wrap items-center gap-x-1.5 text-[11px] sm:text-xs text-slate-500">
+            <span>{unpaidInvoices.length} invoice</span>
             <span aria-hidden="true">·</span>
-            <span>{invoices.filter((i) => i.status === 'Jatuh Tempo').length} jatuh tempo</span>
+            <span>{invoices.filter((i) => i.status === 'Jatuh Tempo').length} tempo</span>
           </div>
         </button>
 
         <button
           type="button"
           onClick={() => onNavigate('schedules')}
-          className="text-left bg-white border border-slate-200 rounded-xl p-5 hover:border-slate-300 transition-colors cursor-pointer"
+          className="text-left bg-white border border-slate-200 rounded-xl p-3.5 sm:p-5 hover:border-slate-300 transition-colors cursor-pointer min-w-0"
         >
-          <div className="flex items-center justify-between text-xs text-slate-500 mb-3">
-            <span>Agenda Latihan & Medali</span>
-            <CalendarDays className="w-4 h-4 text-slate-700" />
+          <div className="flex items-center justify-between text-[11px] sm:text-xs text-slate-500 mb-2 sm:mb-3 gap-1">
+            <span className="truncate">Latihan & Medali</span>
+            <CalendarDays className="w-4 h-4 text-slate-700 shrink-0" />
           </div>
-          <div className="font-mono-tabular text-2xl font-bold text-slate-900">
-            {schedules.length} <span className="text-sm font-normal text-slate-500">sesi rutin</span>
+          <div className="font-mono-tabular text-base sm:text-2xl font-bold text-slate-900">
+            {schedules.length} <span className="text-xs sm:text-sm font-normal text-slate-500">sesi</span>
           </div>
-          <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
+          <div className="mt-1.5 sm:mt-2 flex flex-wrap items-center gap-x-1.5 text-[11px] sm:text-xs text-slate-500">
             <span>{medalStats.gold} Emas</span>
             <span aria-hidden="true">·</span>
             <span>{medalStats.silver} Perak</span>
@@ -225,7 +223,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
       </div>
 
       {/* Main 2-Column Analytical Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 sm:gap-6">
         <div className="lg:col-span-2">
           <CashflowTrendChart transactions={transactions} />
         </div>
