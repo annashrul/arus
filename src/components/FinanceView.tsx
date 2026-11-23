@@ -1,3 +1,4 @@
+import { useUrlState } from '../lib/urlState';
 import React, { useMemo, useState } from 'react';
 import {
   addDoc,
@@ -63,10 +64,10 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
   athletes,
   onOpenPrintReport,
 }) => {
-  const [filterType, setFilterType] = useState<'all' | TransactionType>('all');
-  const [filterCategory, setFilterCategory] = useState<string>('all');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [monthFilter, setMonthFilter] = useState('');
+  const [filterType, setFilterType] = useUrlState<'all' | TransactionType>('finance.type', 'all', { values: ['all', 'pemasukan', 'pengeluaran'] });
+  const [filterCategory, setFilterCategory] = useUrlState<string>('finance.category', 'all');
+  const [searchQuery, setSearchQuery] = useUrlState<string>('finance.q', '');
+  const [monthFilter, setMonthFilter] = useUrlState<string>('finance.month', '');
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTx, setEditingTx] = useState<FinanceTransaction | null>(null);

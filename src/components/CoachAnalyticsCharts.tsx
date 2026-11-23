@@ -1,3 +1,4 @@
+import { useUrlState } from '../lib/urlState';
 import React, { useMemo, useState } from 'react';
 import {
   AGE_GROUPS,
@@ -92,14 +93,14 @@ export const CoachAnalyticsCharts: React.FC<CoachAnalyticsChartsProps> = ({
   attendance,
   swimTimes,
 }) => {
-  const [coachFilter, setCoachFilter] = useState<string>('ALL');
-  const [sectionView, setSectionView] = useState<'all' | 'attendance' | 'strokes'>('all');
-  const [weekMode, setWeekMode] = useState<'4weeks' | 'latest'>('4weeks');
+  const [coachFilter, setCoachFilter] = useUrlState<string>('coachanalytics.coach', 'ALL');
+  const [sectionView, setSectionView] = useUrlState<'all' | 'attendance' | 'strokes'>('coachanalytics.section', 'all', { values: ['all', 'attendance', 'strokes'] });
+  const [weekMode, setWeekMode] = useUrlState<'4weeks' | 'latest'>('coachanalytics.weeks', '4weeks', { values: ['4weeks', 'latest'] });
 
   // Stroke trend filters
-  const [strokeFocus, setStrokeFocus] = useState<string>('ALL');
-  const [courseFilter, setCourseFilter] = useState<string>('ALL');
-  const [ageGroupFilter, setAgeGroupFilter] = useState<string>('ALL');
+  const [strokeFocus, setStrokeFocus] = useUrlState<string>('coachanalytics.stroke', 'ALL');
+  const [courseFilter, setCourseFilter] = useUrlState<string>('coachanalytics.course', 'ALL');
+  const [ageGroupFilter, setAgeGroupFilter] = useUrlState<string>('coachanalytics.age', 'ALL');
   const [activePeriodIdx, setActivePeriodIdx] = useState<number | null>(null);
 
   const coachNames = useMemo(() => {

@@ -1,3 +1,4 @@
+import { useUrlState } from '../lib/urlState';
 import React, { useMemo, useState } from 'react';
 import {
   addDoc,
@@ -86,9 +87,9 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
   pools = [],
   onOpenPrintReport,
 }) => {
-  const [activeTab, setActiveTab] = useState<'schedules' | 'attendance'>('schedules');
-  const [dayFilter, setDayFilter] = useState<string>('all');
-  const [ageFilter, setAgeFilter] = useState<string>('all');
+  const [activeTab, setActiveTab] = useUrlState<'schedules' | 'attendance'>('schedules.tab', 'schedules', { values: ['schedules', 'attendance'], history: 'push' });
+  const [dayFilter, setDayFilter] = useUrlState<string>('schedules.day', 'all');
+  const [ageFilter, setAgeFilter] = useUrlState<string>('schedules.age', 'all');
 
   // Schedule Modal
   const [modalOpen, setModalOpen] = useState(false);
@@ -119,8 +120,8 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
   } | null>(null);
 
   // Attendance controls
-  const [selectedScheduleId, setSelectedScheduleId] = useState<string>(schedules[0]?.id || '');
-  const [attendanceDate, setAttendanceDate] = useState(todayISO());
+  const [selectedScheduleId, setSelectedScheduleId] = useUrlState<string>('attendance.schedule', '');
+  const [attendanceDate, setAttendanceDate] = useUrlState('attendance.date', todayISO());
   const [markingId, setMarkingId] = useState<string | null>(null);
   const [attendanceError, setAttendanceError] = useState<string | null>(null);
 

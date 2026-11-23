@@ -1,3 +1,4 @@
+import { useUrlState } from '../lib/urlState';
 import React, { useMemo, useState } from 'react';
 import { ClubProfile } from '../types/club';
 import {
@@ -46,7 +47,7 @@ export const RemindersDrawer: React.FC<RemindersDrawerProps> = ({
   onResetDismissed,
   onNavigate,
 }) => {
-  const [filterCat, setFilterCat] = useState<'all' | ReminderCategory>('all');
+  const [filterCat, setFilterCat] = useUrlState<'all' | ReminderCategory>('reminders.category', 'all');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [copiedDigest, setCopiedDigest] = useState(false);
   const [notifPermission, setNotifPermission] = useState<NotificationPermission | 'unsupported'>(() => {

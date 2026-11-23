@@ -213,6 +213,9 @@ export interface ClubInvoice {
   status: InvoiceStatus;
   paidDate?: string;
   paymentMethod?: string;
+  paymentProofPath?: string;
+  paymentProofStatus?: 'pending' | 'rejected' | 'verified';
+  paymentProofSubmittedAt?: unknown;
   notes?: string;
   createdAt?: unknown;
   updatedAt?: unknown;

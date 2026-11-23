@@ -1,3 +1,4 @@
+import { useUrlState } from '../lib/urlState';
 import React, { useMemo, useState } from 'react';
 import {
   addDoc,
@@ -87,20 +88,20 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
   coaches = [],
   onOpenPrintReport,
 }) => {
-  const [activeTab, setActiveTab] = useState<'athletes' | 'times'>('athletes');
-  const [showChart, setShowChart] = useState(true);
+  const [activeTab, setActiveTab] = useUrlState<'athletes' | 'times'>('athletes.tab', 'athletes', { values: ['athletes', 'times'], history: 'push' });
+  const [showChart, setShowChart] = useUrlState<boolean>('athletes.chart', true);
 
   // Athlete filters
-  const [athleteSearch, setAthleteSearch] = useState('');
-  const [ageGroupFilter, setAgeGroupFilter] = useState<string>('all');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [coachFilter, setCoachFilter] = useState<string>('all');
+  const [athleteSearch, setAthleteSearch] = useUrlState<string>('athletes.q', '');
+  const [ageGroupFilter, setAgeGroupFilter] = useUrlState<string>('athletes.age', 'all');
+  const [statusFilter, setStatusFilter] = useUrlState<string>('athletes.status', 'all');
+  const [coachFilter, setCoachFilter] = useUrlState<string>('athletes.coach', 'all');
 
   // Swim times filters
-  const [timeSearch, setTimeSearch] = useState('');
-  const [strokeFilter, setStrokeFilter] = useState<string>('all');
-  const [courseFilter, setCourseFilter] = useState<string>('all');
-  const [onlyPB, setOnlyPB] = useState(false);
+  const [timeSearch, setTimeSearch] = useUrlState<string>('times.q', '');
+  const [strokeFilter, setStrokeFilter] = useUrlState<string>('times.stroke', 'all');
+  const [courseFilter, setCourseFilter] = useUrlState<string>('times.course', 'all');
+  const [onlyPB, setOnlyPB] = useUrlState<boolean>('times.pb', false);
 
   // Selected athlete detail drawer
   const [detailAthlete, setDetailAthlete] = useState<Athlete | null>(null);

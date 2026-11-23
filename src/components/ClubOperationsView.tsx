@@ -1,3 +1,4 @@
+import { useUrlState } from '../lib/urlState';
 import React, { useMemo, useState } from 'react';
 import {
   addDoc,
@@ -107,15 +108,15 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
   swimTimes = [],
   onOpenPrint,
 }) => {
-  const [activeTab, setActiveTab] = useState<ClubOpsTab>('coaches');
+  const [activeTab, setActiveTab] = useUrlState<ClubOpsTab>('clubops.tab', 'coaches', { values: ['coaches', 'pools', 'equipment', 'competitions'], history: 'push' });
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   // =========================
   // 1. COACHES STATE & FILTER
   // =========================
-  const [coachSearch, setCoachSearch] = useState('');
-  const [coachRoleFilter, setCoachRoleFilter] = useState<string>('ALL');
-  const [coachStatusFilter, setCoachStatusFilter] = useState<string>('ALL');
+  const [coachSearch, setCoachSearch] = useUrlState<string>('clubops.coach.q', '');
+  const [coachRoleFilter, setCoachRoleFilter] = useUrlState<string>('clubops.coach.role', 'ALL');
+  const [coachStatusFilter, setCoachStatusFilter] = useUrlState<string>('clubops.coach.status', 'ALL');
 
   const [coachModalOpen, setCoachModalOpen] = useState(false);
   const [editingCoach, setEditingCoach] = useState<Coach | null>(null);
@@ -137,9 +138,9 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
   // =========================
   // 2. POOLS STATE & FILTER
   // =========================
-  const [poolSearch, setPoolSearch] = useState('');
-  const [poolTypeFilter, setPoolTypeFilter] = useState<string>('ALL');
-  const [poolStatusFilter, setPoolStatusFilter] = useState<string>('ALL');
+  const [poolSearch, setPoolSearch] = useUrlState<string>('clubops.pool.q', '');
+  const [poolTypeFilter, setPoolTypeFilter] = useUrlState<string>('clubops.pool.type', 'ALL');
+  const [poolStatusFilter, setPoolStatusFilter] = useUrlState<string>('clubops.pool.status', 'ALL');
 
   const [poolModalOpen, setPoolModalOpen] = useState(false);
   const [editingPool, setEditingPool] = useState<PoolFacility | null>(null);
@@ -159,9 +160,9 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
   // =========================
   // 3. EQUIPMENT STATE & FILTER
   // =========================
-  const [eqSearch, setEqSearch] = useState('');
-  const [eqCatFilter, setEqCatFilter] = useState<string>('ALL');
-  const [eqCondFilter, setEqCondFilter] = useState<string>('ALL');
+  const [eqSearch, setEqSearch] = useUrlState<string>('clubops.equipment.q', '');
+  const [eqCatFilter, setEqCatFilter] = useUrlState<string>('clubops.equipment.category', 'ALL');
+  const [eqCondFilter, setEqCondFilter] = useUrlState<string>('clubops.equipment.condition', 'ALL');
 
   const [eqModalOpen, setEqModalOpen] = useState(false);
   const [editingEq, setEditingEq] = useState<EquipmentItem | null>(null);
@@ -181,9 +182,9 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
   // =========================
   // 4. COMPETITIONS STATE & FILTER
   // =========================
-  const [compSearch, setCompSearch] = useState('');
-  const [compLevelFilter, setCompLevelFilter] = useState<string>('ALL');
-  const [compStatusFilter, setCompStatusFilter] = useState<string>('ALL');
+  const [compSearch, setCompSearch] = useUrlState<string>('clubops.competition.q', '');
+  const [compLevelFilter, setCompLevelFilter] = useUrlState<string>('clubops.competition.level', 'ALL');
+  const [compStatusFilter, setCompStatusFilter] = useUrlState<string>('clubops.competition.status', 'ALL');
 
   const [compModalOpen, setCompModalOpen] = useState(false);
   const [editingComp, setEditingComp] = useState<ClubCompetition | null>(null);
