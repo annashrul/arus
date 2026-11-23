@@ -1,3 +1,4 @@
+import { useUrlState } from './lib/urlState';
 import React, { useEffect, useMemo, useState } from 'react';
 import { onAuthStateChanged, signOut, User } from 'firebase/auth';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
@@ -63,7 +64,7 @@ function SwimmingClubWorkspace() {
 
   const [clubsLoading, setClubsLoading] = useState(true);
   const [clubs, setClubs] = useState<ClubProfile[]>([]);
-  const [selectedClubId, setSelectedClubId] = useState<string | null>(null);
+  const [selectedClubId, setSelectedClubId] = useUrlState<string>('club', '');
 
   const [athletes, setAthletes] = useState<Athlete[]>([]);
   const [swimTimes, setSwimTimes] = useState<SwimTime[]>([]);
@@ -77,12 +78,16 @@ function SwimmingClubWorkspace() {
   const [equipment, setEquipment] = useState<EquipmentItem[]>([]);
   const [competitions, setCompetitions] = useState<ClubCompetition[]>([]);
 
-  const [activeNav, setActiveNav] = useState<NavSection>('overview');
+  const [activeNav, setActiveNav] = useUrlState<NavSection>('page', 'overview', { values: NAV_ITEMS.map((item) => item.id), history: 'push' });
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [seedingSample, setSeedingSample] = useState(false);
-  const [remindersOpen, setRemindersOpen] = useState(false);
+  const [remindersOpen, setRemindersOpen] = useUrlState<boolean>('reminders.open', false);
   const [dismissedReminderIds, setDismissedReminderIds] = useState<string[]>([]);
-  const [printReportKind, setPrintReportKind] = useState<PrintReportKind | null>(null);
+  const [reportKind, setReportKind] = useUrlState<PrintReportKind | ''>(
+    'report', '', { values: ['', 'executive', 'finance', 'athletes', 'schedules', 'invoices', 'clubops'] }
+  );
+  const printReportKind = reportKind || null;
+  const setPrintReportKind = (kind: PrintReportKind | null) => setReportKind(kind || '');
 
   // 1. Auth Listener
   useEffect(() => {
