@@ -177,7 +177,10 @@ service cloud.firestore {
 
     function isValidInvoice(data) {
       return data.keys().hasAll(['clubId', 'ownerId', 'invoiceNumber', 'athleteId', 'athleteName', 'periodMonth', 'category', 'description', 'amount', 'dueDate', 'status', 'createdAt', 'updatedAt'])
-        && data.keys().hasOnly(['clubId', 'ownerId', 'invoiceNumber', 'athleteId', 'athleteName', 'parentName', 'parentPhone', 'periodMonth', 'category', 'description', 'amount', 'dueDate', 'status', 'paidDate', 'paymentMethod', 'notes', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['clubId', 'ownerId', 'invoiceNumber', 'athleteId', 'athleteName', 'parentName', 'parentPhone', 'periodMonth', 'category', 'description', 'amount', 'dueDate', 'status', 'paidDate', 'paymentMethod', 'paymentProofPath', 'paymentProofStatus', 'paymentProofSubmittedAt', 'notes', 'createdAt', 'updatedAt'])
+        && (!('paymentProofPath' in data) || (data.paymentProofPath is string && data.paymentProofPath.size() <= 250))
+        && (!('paymentProofStatus' in data) || data.paymentProofStatus in ['pending', 'rejected', 'verified'])
+        && (!('paymentProofSubmittedAt' in data) || data.paymentProofSubmittedAt is timestamp)
         && isValidId(data.clubId)
         && isValidId(data.ownerId)
         && data.invoiceNumber is string && data.invoiceNumber.size() >= 3 && data.invoiceNumber.size() <= 40
@@ -434,8 +437,8 @@ service cloud.firestore {
         && (
           isAdmin() ||
           (isOwnerOfExisting() && (
-            (existing().status in ['Belum Lunas', 'Jatuh Tempo'] && incoming().diff(existing()).affectedKeys().hasOnly(['athleteName', 'parentName', 'parentPhone', 'periodMonth', 'category', 'description', 'amount', 'dueDate', 'status', 'paidDate', 'paymentMethod', 'notes', 'updatedAt'])) ||
-            (existing().status in ['Belum Lunas', 'Jatuh Tempo'] && incoming().status == 'Lunas' && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'paidDate', 'paymentMethod', 'notes', 'updatedAt']))
+            (existing().status in ['Belum Lunas', 'Jatuh Tempo'] && incoming().diff(existing()).affectedKeys().hasOnly(['athleteName', 'parentName', 'parentPhone', 'periodMonth', 'category', 'description', 'amount', 'dueDate', 'status', 'paidDate', 'paymentMethod', 'paymentProofPath', 'paymentProofStatus', 'paymentProofSubmittedAt', 'notes', 'updatedAt'])) ||
+            (existing().status in ['Belum Lunas', 'Jatuh Tempo'] && incoming().status == 'Lunas' && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'paidDate', 'paymentMethod', 'paymentProofStatus', 'notes', 'updatedAt']))
           ))
         );
       allow delete: if isVerifiedUser() && isValidId(invoiceId) && (isOwnerOfExisting() || isAdmin());
