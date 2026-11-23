@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import {
   Athlete,
+  AttendanceRecord,
   ClubAnnouncement,
   ClubInvoice,
   ClubProfile,
@@ -11,12 +12,23 @@ import {
   TrainingSchedule,
 } from '../types/club';
 import {
+  downloadFullClubExcel,
+  downloadJSONBackup,
+  downloadSchedulesICS,
+} from '../lib/exportUtils';
+import { ClubReminder } from '../lib/reminders';
+import { ExportActionMenu } from './ExportActionMenu';
+import { PrintReportKind } from './PrintReportModal';
+import {
   AlertCircle,
+  AlertTriangle,
   ArrowUpRight,
   Award,
+  Bell,
   CalendarDays,
   CheckCircle2,
   Clock,
+  Printer,
   Receipt,
   TrendingDown,
   TrendingUp,
@@ -37,8 +49,12 @@ interface OverviewViewProps {
   swimTimes: SwimTime[];
   transactions: FinanceTransaction[];
   schedules: TrainingSchedule[];
+  attendance: AttendanceRecord[];
   invoices: ClubInvoice[];
   announcements: ClubAnnouncement[];
+  reminders: ClubReminder[];
+  onOpenReminders: () => void;
+  onOpenPrintReport: (kind: PrintReportKind) => void;
   onNavigate: (section: NavSection) => void;
   onLoadSampleData?: () => Promise<void>;
   seedingSample?: boolean;
@@ -50,8 +66,12 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
   swimTimes,
   transactions,
   schedules,
+  attendance,
   invoices,
   announcements,
+  reminders,
+  onOpenReminders,
+  onOpenPrintReport,
   onNavigate,
   onLoadSampleData,
   seedingSample,
@@ -121,6 +141,74 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
 
   return (
     <div className="space-y-5 sm:space-y-7">
+      {/* Overview Action Bar: Export All & Print Report */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h1 className="font-display text-lg sm:text-xl font-bold text-slate-900">
+            Ringkasan {club.name}
+          </h1>
+          <p className="text-xs sm:text-sm text-slate-500">
+            Pantau kas klub, prestasi atlet, jadwal latihan, dan pengingat tagihan dalam satu layar.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 sm:flex items-center gap-2 shrink-0">
+          <ExportActionMenu
+            label="Ekspor Klub"
+            disabled={isEmptyClub}
+            options={[
+              {
+                id: 'full-excel',
+                label: 'Workbook Excel (.xls)',
+                description: 'Semua data klub (7 sheet: Kas, Atlet, Waktu, Jadwal, Presensi, Invoice)',
+                format: 'excel',
+                onSelect: () =>
+                  downloadFullClubExcel(club, {
+                    athletes,
+                    swimTimes,
+                    transactions,
+                    schedules,
+                    attendance,
+                    invoices,
+                  }),
+              },
+              {
+                id: 'schedules-ics',
+                label: 'Kalender Latihan (.ics)',
+                description: 'Impor jadwal latihan ke Google / Apple Calendar',
+                format: 'ics',
+                disabled: schedules.length === 0,
+                onSelect: () => downloadSchedulesICS(club, schedules),
+              },
+              {
+                id: 'full-json',
+                label: 'Backup Lengkap (.json)',
+                description: 'Arsip seluruh data klub termasuk surat administrasi',
+                format: 'json',
+                onSelect: () =>
+                  downloadJSONBackup(club, {
+                    athletes,
+                    swimTimes,
+                    transactions,
+                    schedules,
+                    attendance,
+                    invoices,
+                    announcements,
+                  }),
+              },
+            ]}
+          />
+          <button
+            type="button"
+            onClick={() => onOpenPrintReport('executive')}
+            className="inline-flex items-center justify-center gap-1.5 px-3.5 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 whitespace-nowrap shrink-0 cursor-pointer"
+          >
+            <Printer className="w-3.5 h-3.5 text-sky-700" />
+            <span>Mode Cetak</span>
+          </button>
+        </div>
+      </div>
+
       {/* Header Banner / Quick Empty Prompt */}
       {isEmptyClub && onLoadSampleData && (
         <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -140,6 +228,52 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           >
             {seedingSample ? 'Memuat Data...' : 'Muat Data Contoh Klub'}
           </button>
+        </div>
+      )}
+
+      {/* Priority Reminders Strip (Real data-driven alerts) */}
+      {reminders.length > 0 && (
+        <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 min-w-0">
+              <Bell className="w-4 h-4 text-sky-700 shrink-0" />
+              <h2 className="font-display text-sm sm:text-base font-semibold text-slate-900 truncate">
+                Pengingat Hari Ini ({reminders.length})
+              </h2>
+            </div>
+            <button
+              type="button"
+              onClick={onOpenReminders}
+              className="text-xs font-medium text-sky-700 hover:text-sky-800 inline-flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              Kelola Semua <ArrowUpRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+            {reminders.slice(0, 3).map((r) => (
+              <button
+                key={r.id}
+                type="button"
+                onClick={() => onNavigate(r.targetNav)}
+                className={`text-left border rounded-lg p-3 transition-colors cursor-pointer min-w-0 ${
+                  r.severity === 'urgent'
+                    ? 'border-red-200 bg-red-50/40 hover:bg-red-50/70'
+                    : r.severity === 'warning'
+                    ? 'border-amber-200 bg-amber-50/30 hover:bg-amber-50/60'
+                    : 'border-slate-200 bg-slate-50/60 hover:bg-slate-100/70'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-slate-900 truncate">{r.title}</span>
+                  {r.severity === 'urgent' && (
+                    <AlertTriangle className="w-3.5 h-3.5 text-red-600 shrink-0" />
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-600 mt-1 truncate">{r.description}</p>
+              </button>
+            ))}
+          </div>
         </div>
       )}
 

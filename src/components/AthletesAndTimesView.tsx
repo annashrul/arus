@@ -41,13 +41,18 @@ import {
   todayISO,
 } from '../types/club';
 import {
+  buildAthletesSheet,
+  buildSwimTimesSheet,
+  downloadExcelWorkbook,
+} from '../lib/exportUtils';
+import {
   AlertTriangle,
   Award,
   CheckCircle2,
-  Download,
   Edit3,
   Eye,
   Plus,
+  Printer,
   Search,
   Timer,
   Trash2,
@@ -56,6 +61,7 @@ import {
   X,
 } from 'lucide-react';
 import { SwimTimeTrendChart } from './TrendCharts';
+import { ExportActionMenu } from './ExportActionMenu';
 
 interface AthletesAndTimesViewProps {
   club: ClubProfile;
@@ -63,6 +69,7 @@ interface AthletesAndTimesViewProps {
   athletes: Athlete[];
   swimTimes: SwimTime[];
   invoices: ClubInvoice[];
+  onOpenPrintReport: () => void;
 }
 
 export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
@@ -71,6 +78,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
   athletes,
   swimTimes,
   invoices,
+  onOpenPrintReport,
 }) => {
   const [activeTab, setActiveTab] = useState<'athletes' | 'times'>('athletes');
 
@@ -573,6 +581,13 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
     );
   };
 
+  const handleExportAthletesExcel = () => {
+    downloadExcelWorkbook(
+      `atlet-dan-waktu-${club.name.toLowerCase().replace(/\s+/g, '-')}.xls`,
+      [buildAthletesSheet(filteredAthletes), buildSwimTimesSheet(filteredTimes)]
+    );
+  };
+
   // Detail Drawer computations
   const detailTimes = useMemo(() => {
     if (!detailAthlete) return [];
@@ -601,21 +616,49 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
           </p>
         </div>
 
-        <div className="grid grid-cols-2 sm:flex items-center gap-2 shrink-0">
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 shrink-0">
+          <ExportActionMenu
+            label="Ekspor"
+            disabled={filteredAthletes.length === 0 && filteredTimes.length === 0}
+            options={[
+              {
+                id: 'ath-excel',
+                label: 'Ekspor Excel (.xls)',
+                description: '2 sheet: Daftar Atlet & Catatan Waktu Kejuaraan',
+                format: 'excel',
+                onSelect: handleExportAthletesExcel,
+              },
+              {
+                id: 'ath-csv',
+                label: 'CSV Daftar Atlet',
+                description: `${filteredAthletes.length} atlet sesuai filter`,
+                format: 'csv',
+                disabled: filteredAthletes.length === 0,
+                onSelect: handleExportAthletesCSV,
+              },
+              {
+                id: 'times-csv',
+                label: 'CSV Catatan Waktu',
+                description: `${filteredTimes.length} catatan lomba sesuai filter`,
+                format: 'csv',
+                disabled: filteredTimes.length === 0,
+                onSelect: handleExportTimesCSV,
+              },
+            ]}
+          />
           <button
             type="button"
-            onClick={activeTab === 'athletes' ? handleExportAthletesCSV : handleExportTimesCSV}
-            disabled={activeTab === 'athletes' ? filteredAthletes.length === 0 : filteredTimes.length === 0}
-            className="inline-flex items-center justify-center gap-1.5 px-3.5 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50"
+            onClick={onOpenPrintReport}
+            className="inline-flex items-center justify-center gap-1.5 px-3.5 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 whitespace-nowrap shrink-0 cursor-pointer"
           >
-            <Download className="w-3.5 h-3.5" />
-            Unduh CSV
+            <Printer className="w-3.5 h-3.5 text-sky-700" />
+            Cetak
           </button>
           {activeTab === 'athletes' ? (
             <button
               type="button"
               onClick={openCreateAthlete}
-              className="inline-flex items-center justify-center gap-1.5 px-4 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 whitespace-nowrap shrink-0 cursor-pointer"
+              className="col-span-2 sm:col-span-1 inline-flex items-center justify-center gap-1.5 px-4 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 whitespace-nowrap shrink-0 cursor-pointer"
             >
               <UserPlus className="w-3.5 h-3.5" />
               Tambah Atlet
@@ -625,7 +668,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
               type="button"
               onClick={() => openCreateTime()}
               disabled={athletes.length === 0}
-              className="inline-flex items-center justify-center gap-1.5 px-4 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50"
+              className="col-span-2 sm:col-span-1 inline-flex items-center justify-center gap-1.5 px-4 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50"
             >
               <Plus className="w-3.5 h-3.5" />
               Catat Waktu

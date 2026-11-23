@@ -29,24 +29,27 @@ import {
   TransactionCategory,
   TransactionType,
 } from '../types/club';
+import { buildFinanceSheet, downloadExcelWorkbook } from '../lib/exportUtils';
 import {
   AlertTriangle,
   ArrowDownLeft,
   ArrowUpRight,
-  Download,
   Edit3,
   Plus,
+  Printer,
   Search,
   Trash2,
   X,
 } from 'lucide-react';
 import { CashflowTrendChart } from './TrendCharts';
+import { ExportActionMenu } from './ExportActionMenu';
 
 interface FinanceViewProps {
   club: ClubProfile;
   userId: string;
   transactions: FinanceTransaction[];
   athletes: Athlete[];
+  onOpenPrintReport: () => void;
 }
 
 export const FinanceView: React.FC<FinanceViewProps> = ({
@@ -54,6 +57,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
   userId,
   transactions,
   athletes,
+  onOpenPrintReport,
 }) => {
   const [filterType, setFilterType] = useState<'all' | TransactionType>('all');
   const [filterCategory, setFilterCategory] = useState<string>('all');
@@ -279,6 +283,13 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
     );
   };
 
+  const handleExportExcel = () => {
+    downloadExcelWorkbook(
+      `laporan-keuangan-${club.name.toLowerCase().replace(/\s+/g, '-')}.xls`,
+      [buildFinanceSheet(filtered)]
+    );
+  };
+
   return (
     <div className="space-y-5 sm:space-y-6">
       {/* Top Action & Summary */}
@@ -295,7 +306,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
           <button
             type="button"
             onClick={() => openCreateModal('pemasukan')}
-            className="col-span-2 sm:col-span-1 sm:order-3 inline-flex items-center justify-center gap-2 px-4 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            className="col-span-2 sm:col-span-1 sm:order-4 inline-flex items-center justify-center gap-2 px-4 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
             Catat Pemasukan
@@ -303,19 +314,39 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
           <button
             type="button"
             onClick={() => openCreateModal('pengeluaran')}
-            className="sm:order-2 inline-flex items-center justify-center gap-1.5 px-3.5 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            className="sm:order-3 inline-flex items-center justify-center gap-1.5 px-3.5 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5 text-red-600" />
             Pengeluaran
           </button>
+          <ExportActionMenu
+            className="sm:order-1"
+            label="Ekspor"
+            disabled={filtered.length === 0}
+            options={[
+              {
+                id: 'fin-excel',
+                label: 'Ekspor Excel (.xls)',
+                description: `${filtered.length} transaksi terformat siap olah`,
+                format: 'excel',
+                onSelect: handleExportExcel,
+              },
+              {
+                id: 'fin-csv',
+                label: 'Ekspor CSV (.csv)',
+                description: 'Format tabel standar untuk spreadsheet',
+                format: 'csv',
+                onSelect: handleExportCSV,
+              },
+            ]}
+          />
           <button
             type="button"
-            onClick={handleExportCSV}
-            disabled={filtered.length === 0}
-            className="sm:order-1 inline-flex items-center justify-center gap-1.5 px-3.5 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50"
+            onClick={onOpenPrintReport}
+            className="sm:order-2 inline-flex items-center justify-center gap-1.5 px-3.5 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
           >
-            <Download className="w-3.5 h-3.5" />
-            Unduh CSV
+            <Printer className="w-3.5 h-3.5 text-sky-700" />
+            Cetak
           </button>
         </div>
       </div>

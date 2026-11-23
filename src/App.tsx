@@ -1,8 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { onAuthStateChanged, signOut, User } from 'firebase/auth';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { auth, db, handleFirestoreError, OperationType } from './lib/firebase';
 import { seedSampleRecordsForClub } from './lib/seedSampleClub';
+import {
+  clearDismissedRemindersForToday,
+  computeClubReminders,
+  dismissReminderForToday,
+  getDismissedReminderIds,
+} from './lib/reminders';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ClubOnboarding } from './components/ClubOnboarding';
 import { NavSection, OverviewView } from './components/OverviewView';
@@ -10,6 +16,8 @@ import { FinanceView } from './components/FinanceView';
 import { AthletesAndTimesView } from './components/AthletesAndTimesView';
 import { SchedulesAndAttendanceView } from './components/SchedulesAndAttendanceView';
 import { InvoicesAndAdminView } from './components/InvoicesAndAdminView';
+import { RemindersDrawer } from './components/RemindersDrawer';
+import { PrintReportKind, PrintReportModal } from './components/PrintReportModal';
 import {
   Athlete,
   AttendanceRecord,
@@ -21,11 +29,13 @@ import {
   TrainingSchedule,
 } from './types/club';
 import {
+  Bell,
   CalendarDays,
   LayoutDashboard,
   Loader2,
   LogOut,
   Menu,
+  Printer,
   Receipt,
   Users,
   Wallet,
@@ -59,6 +69,9 @@ function SwimmingClubWorkspace() {
   const [activeNav, setActiveNav] = useState<NavSection>('overview');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [seedingSample, setSeedingSample] = useState(false);
+  const [remindersOpen, setRemindersOpen] = useState(false);
+  const [dismissedReminderIds, setDismissedReminderIds] = useState<string[]>([]);
+  const [printReportKind, setPrintReportKind] = useState<PrintReportKind | null>(null);
 
   // 1. Auth Listener
   useEffect(() => {
@@ -188,6 +201,35 @@ function SwimmingClubWorkspace() {
     };
   }, [authReady, user, activeClub]);
 
+  useEffect(() => {
+    if (!activeClub) {
+      setDismissedReminderIds([]);
+      return;
+    }
+    setDismissedReminderIds(getDismissedReminderIds(activeClub.id));
+  }, [activeClub]);
+
+  const allReminders = useMemo(() => {
+    if (!activeClub) return [];
+    return computeClubReminders({
+      club: activeClub,
+      invoices,
+      schedules,
+      attendance,
+      announcements,
+    });
+  }, [activeClub, invoices, schedules, attendance, announcements]);
+
+  const activeReminders = useMemo(
+    () => allReminders.filter((r) => !dismissedReminderIds.includes(r.id)),
+    [allReminders, dismissedReminderIds]
+  );
+
+  const urgentReminderCount = useMemo(
+    () => activeReminders.filter((r) => r.severity === 'urgent').length,
+    [activeReminders]
+  );
+
   const handleLoadSampleData = async () => {
     if (!user || !activeClub) return;
     setSeedingSample(true);
@@ -223,8 +265,17 @@ function SwimmingClubWorkspace() {
     invoices: 'Invoice',
   };
 
+  const defaultReportForNav: Record<NavSection, PrintReportKind> = {
+    overview: 'executive',
+    finance: 'finance',
+    athletes: 'athletes',
+    schedules: 'schedules',
+    invoices: 'invoices',
+  };
+
   return (
-    <div className="min-h-screen bg-slate-50 flex">
+    <>
+    <div className={`min-h-screen bg-slate-50 flex ${printReportKind ? 'no-print' : ''}`}>
       {/* Desktop Sidebar */}
       <aside className="hidden lg:flex lg:w-64 lg:flex-col lg:fixed lg:inset-y-0 bg-white border-r border-slate-200 no-print">
         <div className="h-16 px-5 flex items-center gap-3 border-b border-slate-200">
@@ -379,13 +430,36 @@ function SwimmingClubWorkspace() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
-              onClick={() => setActiveNav(activeNav === 'invoices' ? 'finance' : 'invoices')}
-              className="px-3.5 min-h-[40px] lg:min-h-[36px] text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200/70 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              onClick={() => setRemindersOpen(true)}
+              aria-label="Buka notifikasi pengingat"
+              className="inline-flex items-center gap-1.5 px-3 min-h-[40px] lg:min-h-[36px] text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200/70 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
             >
-              {activeNav === 'invoices' ? 'Keuangan Kas' : 'Invoice SPP'}
+              <Bell
+                className={`w-3.5 h-3.5 shrink-0 ${
+                  urgentReminderCount > 0 ? 'text-red-600' : 'text-slate-600'
+                }`}
+              />
+              <span className="hidden sm:inline">Pengingat</span>
+              {activeReminders.length > 0 && (
+                <span
+                  className={`font-mono-tabular font-bold ${
+                    urgentReminderCount > 0 ? 'text-red-600' : 'text-sky-700'
+                  }`}
+                >
+                  ({activeReminders.length})
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setPrintReportKind(defaultReportForNav[activeNav])}
+              className="inline-flex items-center gap-1.5 px-3 min-h-[40px] lg:min-h-[36px] text-xs font-medium text-white bg-sky-700 hover:bg-sky-800 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              <Printer className="w-3.5 h-3.5 shrink-0" />
+              <span>Cetak Laporan</span>
             </button>
           </div>
         </header>
@@ -398,8 +472,12 @@ function SwimmingClubWorkspace() {
               swimTimes={swimTimes}
               transactions={transactions}
               schedules={schedules}
+              attendance={attendance}
               invoices={invoices}
               announcements={announcements}
+              reminders={activeReminders}
+              onOpenReminders={() => setRemindersOpen(true)}
+              onOpenPrintReport={(kind) => setPrintReportKind(kind)}
               onNavigate={setActiveNav}
               onLoadSampleData={handleLoadSampleData}
               seedingSample={seedingSample}
@@ -412,6 +490,7 @@ function SwimmingClubWorkspace() {
               userId={user.uid}
               transactions={transactions}
               athletes={athletes}
+              onOpenPrintReport={() => setPrintReportKind('finance')}
             />
           )}
 
@@ -422,6 +501,7 @@ function SwimmingClubWorkspace() {
               athletes={athletes}
               swimTimes={swimTimes}
               invoices={invoices}
+              onOpenPrintReport={() => setPrintReportKind('athletes')}
             />
           )}
 
@@ -432,6 +512,7 @@ function SwimmingClubWorkspace() {
               schedules={schedules}
               athletes={athletes}
               attendance={attendance}
+              onOpenPrintReport={() => setPrintReportKind('schedules')}
             />
           )}
 
@@ -442,6 +523,7 @@ function SwimmingClubWorkspace() {
               invoices={invoices}
               athletes={athletes}
               announcements={announcements}
+              onOpenPrintReport={() => setPrintReportKind('invoices')}
             />
           )}
         </main>
@@ -475,6 +557,31 @@ function SwimmingClubWorkspace() {
         </div>
       </nav>
     </div>
+
+    <RemindersDrawer
+      open={remindersOpen}
+      onClose={() => setRemindersOpen(false)}
+      club={activeClub}
+      reminders={allReminders}
+      dismissedIds={dismissedReminderIds}
+      onDismiss={(id) => setDismissedReminderIds(dismissReminderForToday(activeClub.id, id))}
+      onResetDismissed={() => setDismissedReminderIds(clearDismissedRemindersForToday(activeClub.id))}
+      onNavigate={setActiveNav}
+    />
+
+    <PrintReportModal
+      open={printReportKind !== null}
+      initialReport={printReportKind || 'executive'}
+      onClose={() => setPrintReportKind(null)}
+      club={activeClub}
+      athletes={athletes}
+      swimTimes={swimTimes}
+      transactions={transactions}
+      schedules={schedules}
+      attendance={attendance}
+      invoices={invoices}
+    />
+    </>
   );
 }
 

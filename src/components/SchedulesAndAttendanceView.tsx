@@ -28,6 +28,7 @@ import {
   ClubProfile,
   DAYS_OF_WEEK,
   DayOfWeek,
+  downloadCSV,
   formatDateID,
   ScheduleAgeGroup,
   ScheduleSessionType,
@@ -36,6 +37,12 @@ import {
   TrainingSchedule,
 } from '../types/club';
 import {
+  buildAttendanceSheet,
+  buildSchedulesSheet,
+  downloadExcelWorkbook,
+  downloadSchedulesICS,
+} from '../lib/exportUtils';
+import {
   AlertTriangle,
   Calendar,
   CheckCircle2,
@@ -43,11 +50,13 @@ import {
   Edit3,
   MapPin,
   Plus,
+  Printer,
   Trash2,
   Users,
   X,
 } from 'lucide-react';
 import { TrainingTrendChart } from './TrendCharts';
+import { ExportActionMenu } from './ExportActionMenu';
 
 interface SchedulesAndAttendanceViewProps {
   club: ClubProfile;
@@ -55,6 +64,7 @@ interface SchedulesAndAttendanceViewProps {
   schedules: TrainingSchedule[];
   athletes: Athlete[];
   attendance: AttendanceRecord[];
+  onOpenPrintReport: () => void;
 }
 
 export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProps> = ({
@@ -63,6 +73,7 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
   schedules,
   athletes,
   attendance,
+  onOpenPrintReport,
 }) => {
   const [activeTab, setActiveTab] = useState<'schedules' | 'attendance'>('schedules');
   const [dayFilter, setDayFilter] = useState<string>('all');
@@ -352,6 +363,49 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
     return { hadir, izin, sakit, alpa, totalMarked: attendanceMapForSession.size };
   }, [attendanceMapForSession]);
 
+  const handleExportSchedulesCSV = () => {
+    downloadCSV(
+      `jadwal-latihan-${club.name.toLowerCase().replace(/\s+/g, '-')}.csv`,
+      ['Hari', 'Tanggal Khusus', 'Mulai', 'Selesai', 'Judul Sesi', 'Fokus', 'Kelompok', 'Kolam', 'Lintasan', 'Pelatih', 'Target (m)', 'Catatan'],
+      filteredSchedules.map((s) => [
+        s.dayOfWeek,
+        s.sessionDate || 'Rutin',
+        s.startTime,
+        s.endTime,
+        s.title,
+        s.sessionType,
+        s.ageGroup,
+        s.poolLocation,
+        s.laneInfo || '-',
+        s.coachName,
+        s.targetDistanceMeters,
+        s.notes || '-',
+      ])
+    );
+  };
+
+  const handleExportAttendanceCSV = () => {
+    const sorted = [...attendance].sort((a, b) => b.sessionDate.localeCompare(a.sessionDate));
+    downloadCSV(
+      `presensi-latihan-${club.name.toLowerCase().replace(/\s+/g, '-')}.csv`,
+      ['Tanggal', 'Sesi Latihan', 'Nama Atlet', 'Status', 'Catatan'],
+      sorted.map((rec) => [
+        rec.sessionDate,
+        rec.scheduleTitle,
+        rec.athleteName,
+        rec.status,
+        rec.notes || '-',
+      ])
+    );
+  };
+
+  const handleExportSchedulesExcel = () => {
+    downloadExcelWorkbook(
+      `jadwal-dan-presensi-${club.name.toLowerCase().replace(/\s+/g, '-')}.xls`,
+      [buildSchedulesSheet(filteredSchedules), buildAttendanceSheet(attendance)]
+    );
+  };
+
   return (
     <div className="space-y-5 sm:space-y-6">
       {/* Header */}
@@ -365,14 +419,61 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={openCreateModal}
-          className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 whitespace-nowrap shrink-0 cursor-pointer"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          Tambah Jadwal Latihan
-        </button>
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 shrink-0">
+          <ExportActionMenu
+            label="Ekspor"
+            disabled={schedules.length === 0 && attendance.length === 0}
+            options={[
+              {
+                id: 'sch-excel',
+                label: 'Ekspor Excel (.xls)',
+                description: '2 sheet: Matriks Jadwal & Log Presensi',
+                format: 'excel',
+                onSelect: handleExportSchedulesExcel,
+              },
+              {
+                id: 'sch-ics',
+                label: 'Kalender (.ics)',
+                description: 'Impor jadwal ke Google Calendar / Apple Calendar',
+                format: 'ics',
+                disabled: filteredSchedules.length === 0,
+                onSelect: () => downloadSchedulesICS(club, filteredSchedules),
+              },
+              {
+                id: 'sch-csv',
+                label: 'CSV Jadwal Latihan',
+                description: `${filteredSchedules.length} sesi terjadwal`,
+                format: 'csv',
+                disabled: filteredSchedules.length === 0,
+                onSelect: handleExportSchedulesCSV,
+              },
+              {
+                id: 'att-csv',
+                label: 'CSV Rekap Presensi',
+                description: `${attendance.length} catatan kehadiran`,
+                format: 'csv',
+                disabled: attendance.length === 0,
+                onSelect: handleExportAttendanceCSV,
+              },
+            ]}
+          />
+          <button
+            type="button"
+            onClick={onOpenPrintReport}
+            className="inline-flex items-center justify-center gap-1.5 px-3.5 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 whitespace-nowrap shrink-0 cursor-pointer"
+          >
+            <Printer className="w-3.5 h-3.5 text-sky-700" />
+            Cetak
+          </button>
+          <button
+            type="button"
+            onClick={openCreateModal}
+            className="col-span-2 sm:col-span-1 inline-flex items-center justify-center gap-2 px-4 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 whitespace-nowrap shrink-0 cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Tambah Jadwal Latihan
+          </button>
+        </div>
       </div>
 
       {/* Sub-tabs */}

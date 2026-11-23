@@ -40,8 +40,12 @@
 }
 
 @media print {
+  html,
   body {
     background: #ffffff !important;
+    color: #0f172a !important;
+    height: auto !important;
+    overflow: visible !important;
   }
   .no-print {
     display: none !important;
@@ -52,5 +56,16 @@
     padding: 0 !important;
     margin: 0 !important;
     max-width: 100% !important;
+    width: 100% !important;
+  }
+  table {
+    page-break-inside: auto;
+  }
+  tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  thead {
+    display: table-header-group;
   }
 }

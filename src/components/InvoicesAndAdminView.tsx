@@ -36,13 +36,13 @@ import {
   PaymentMethod,
   todayISO,
 } from '../types/club';
+import { buildInvoicesSheet, downloadExcelWorkbook } from '../lib/exportUtils';
 import {
   AlertTriangle,
   Building2,
   Check,
   CheckCircle2,
   Copy,
-  Download,
   FileText,
   Layers,
   Plus,
@@ -51,6 +51,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
+import { ExportActionMenu } from './ExportActionMenu';
 
 interface InvoicesAndAdminViewProps {
   club: ClubProfile;
@@ -58,6 +59,7 @@ interface InvoicesAndAdminViewProps {
   invoices: ClubInvoice[];
   athletes: Athlete[];
   announcements: ClubAnnouncement[];
+  onOpenPrintReport: () => void;
 }
 
 export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
@@ -66,6 +68,7 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
   invoices,
   athletes,
   announcements,
+  onOpenPrintReport,
 }) => {
   const [activeTab, setActiveTab] = useState<'invoices' | 'letters' | 'settings'>('invoices');
   const [listError, setListError] = useState<string | null>(null);
@@ -716,6 +719,13 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
     }
   };
 
+  const handleExportInvoicesExcel = () => {
+    downloadExcelWorkbook(
+      `rekap-invoice-${club.name.toLowerCase().replace(/\s+/g, '-')}.xls`,
+      [buildInvoicesSheet(filteredInvoices)]
+    );
+  };
+
   return (
     <div className="space-y-5 sm:space-y-6">
       {/* Header */}
@@ -735,7 +745,7 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
               type="button"
               onClick={openCreateInvoice}
               disabled={athletes.length === 0}
-              className="col-span-2 sm:col-span-1 sm:order-3 inline-flex items-center justify-center gap-2 px-4 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 whitespace-nowrap cursor-pointer disabled:opacity-50"
+              className="col-span-2 sm:col-span-1 sm:order-4 inline-flex items-center justify-center gap-2 px-4 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 whitespace-nowrap cursor-pointer disabled:opacity-50"
             >
               <Plus className="w-3.5 h-3.5" />
               Buat Invoice
@@ -748,20 +758,40 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                 setBatchOpen(true);
               }}
               disabled={athletes.filter((a) => a.status === 'Aktif').length === 0}
-              className="sm:order-2 inline-flex items-center justify-center gap-1.5 px-3 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 whitespace-nowrap cursor-pointer disabled:opacity-50"
+              className="sm:order-3 inline-flex items-center justify-center gap-1.5 px-3 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 whitespace-nowrap cursor-pointer disabled:opacity-50"
             >
               <Layers className="w-3.5 h-3.5 text-sky-700" />
               SPP Massal
             </button>
             <button
               type="button"
-              onClick={handleExportInvoicesCSV}
-              disabled={filteredInvoices.length === 0}
-              className="sm:order-1 inline-flex items-center justify-center gap-1.5 px-3 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 whitespace-nowrap cursor-pointer disabled:opacity-50"
+              onClick={onOpenPrintReport}
+              className="sm:order-2 inline-flex items-center justify-center gap-1.5 px-3 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 whitespace-nowrap cursor-pointer"
             >
-              <Download className="w-3.5 h-3.5" />
-              Unduh CSV
+              <Printer className="w-3.5 h-3.5 text-sky-700" />
+              Cetak Rekap
             </button>
+            <ExportActionMenu
+              className="col-span-2 sm:col-span-1 sm:order-1"
+              label="Ekspor"
+              disabled={filteredInvoices.length === 0}
+              options={[
+                {
+                  id: 'inv-excel',
+                  label: 'Ekspor Excel (.xls)',
+                  description: `${filteredInvoices.length} tagihan siap olah`,
+                  format: 'excel',
+                  onSelect: handleExportInvoicesExcel,
+                },
+                {
+                  id: 'inv-csv',
+                  label: 'Ekspor CSV (.csv)',
+                  description: 'Format tabel standar untuk spreadsheet',
+                  format: 'csv',
+                  onSelect: handleExportInvoicesCSV,
+                },
+              ]}
+            />
           </div>
         )}
 
