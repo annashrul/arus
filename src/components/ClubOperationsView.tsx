@@ -9,6 +9,8 @@ import {
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import {
+  Athlete,
+  AttendanceRecord,
   COACH_LICENSES,
   COACH_ROLES,
   COACH_STATUSES,
@@ -37,7 +39,9 @@ import {
   PoolFacility,
   PoolStatus,
   PoolType,
+  SwimTime,
   todayISO,
+  TrainingSchedule,
 } from '../types/club';
 import {
   clampString,
@@ -55,6 +59,7 @@ import {
 } from '../lib/exportUtils';
 import { ExportActionMenu } from './ExportActionMenu';
 import { BottomSheetSelect } from './BottomSheetSelect';
+import { CoachAnalyticsCharts } from './CoachAnalyticsCharts';
 import {
   AlertTriangle,
   Award,
@@ -80,6 +85,10 @@ interface ClubOperationsViewProps {
   pools: PoolFacility[];
   equipment: EquipmentItem[];
   competitions: ClubCompetition[];
+  athletes?: Athlete[];
+  schedules?: TrainingSchedule[];
+  attendance?: AttendanceRecord[];
+  swimTimes?: SwimTime[];
   onOpenPrint?: () => void;
 }
 
@@ -92,6 +101,10 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
   pools,
   equipment,
   competitions,
+  athletes = [],
+  schedules = [],
+  attendance = [],
+  swimTimes = [],
   onOpenPrint,
 }) => {
   const [activeTab, setActiveTab] = useState<ClubOpsTab>('coaches');
@@ -1126,6 +1139,16 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
               </div>
             </>
           )}
+
+          <div className="pt-2">
+            <CoachAnalyticsCharts
+              coaches={coaches}
+              athletes={athletes}
+              schedules={schedules}
+              attendance={attendance}
+              swimTimes={swimTimes}
+            />
+          </div>
         </div>
       )}
 

@@ -109,6 +109,8 @@ export interface ClubProfile {
   bankName?: string;
   bankAccountNumber?: string;
   bankAccountHolder?: string;
+  qrisPayload?: string;
+  qrisMerchantName?: string;
   defaultMonthlyFee: number;
   ownerId: string;
   createdAt?: unknown;

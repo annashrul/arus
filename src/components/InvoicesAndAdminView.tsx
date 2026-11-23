@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import QRCode from 'qrcode';
 import {
   addDoc,
   collection,
@@ -45,15 +46,29 @@ import {
   Copy,
   FileText,
   Filter,
+  ImagePlus,
   Layers,
+  Loader2,
+  MessageCircle,
   Plus,
   Printer,
+  QrCode,
   Search,
   Trash2,
+  Upload,
   X,
 } from 'lucide-react';
 import { ExportActionMenu } from './ExportActionMenu';
 import { BottomSheetSelect } from './BottomSheetSelect';
+import { QrisCodeCard } from './QrisCodeCard';
+import { WhatsAppNotifyModal, WhatsAppRecipientItem } from './WhatsAppNotifyModal';
+import { buildInvoiceNotificationMessage } from '../lib/whatsapp';
+import {
+  buildSampleQrisPayload,
+  decodeQrisFromImageFile,
+  extractQrisMerchantInfo,
+  isValidQrisString,
+} from '../lib/qris';
 
 interface InvoicesAndAdminViewProps {
   club: ClubProfile;
@@ -119,6 +134,13 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
   const [previewInv, setPreviewInv] = useState<ClubInvoice | null>(null);
   const [copiedWa, setCopiedWa] = useState(false);
 
+  // WhatsApp Parent Notification Modal
+  const [waModalData, setWaModalData] = useState<{
+    title: string;
+    description: string;
+    recipients: WhatsAppRecipientItem[];
+  } | null>(null);
+
   // Announcements Modal
   const [annModalOpen, setAnnModalOpen] = useState(false);
   const [annTitle, setAnnTitle] = useState('');
@@ -145,12 +167,29 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
   const [sBankNo, setSBankNo] = useState(club.bankAccountNumber || '');
   const [sBankHolder, setSBankHolder] = useState(club.bankAccountHolder || '');
   const [sFee, setSFee] = useState(String(club.defaultMonthlyFee));
+  const [sQrisPayload, setSQrisPayload] = useState(club.qrisPayload || '');
+  const [sQrisMerchantName, setSQrisMerchantName] = useState(club.qrisMerchantName || '');
+  const [qrisPreviewDataUrl, setQrisPreviewDataUrl] = useState('');
+  const [qrisUploading, setQrisUploading] = useState(false);
+  const [qrisUploadMsg, setQrisUploadMsg] = useState<string | null>(null);
+  const qrisFileInputRef = useRef<HTMLInputElement | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsSaved, setSettingsSaved] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [settingsFieldErrors, setSettingsFieldErrors] = useState<
     FieldErrors<
-      'name' | 'city' | 'address' | 'coach' | 'fee' | 'phone' | 'email' | 'bankName' | 'bankNo' | 'bankHolder'
+      | 'name'
+      | 'city'
+      | 'address'
+      | 'coach'
+      | 'fee'
+      | 'phone'
+      | 'email'
+      | 'bankName'
+      | 'bankNo'
+      | 'bankHolder'
+      | 'qrisPayload'
+      | 'qrisMerchantName'
     >
   >({});
 
@@ -165,7 +204,33 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
     setSBankNo(club.bankAccountNumber || '');
     setSBankHolder(club.bankAccountHolder || '');
     setSFee(String(club.defaultMonthlyFee));
+    setSQrisPayload(club.qrisPayload || '');
+    setSQrisMerchantName(club.qrisMerchantName || '');
   }, [club]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const trimmed = sQrisPayload.trim();
+    if (!trimmed || !isValidQrisString(trimmed)) {
+      setQrisPreviewDataUrl('');
+      return;
+    }
+    QRCode.toDataURL(trimmed, {
+      errorCorrectionLevel: 'M',
+      margin: 2,
+      width: 200,
+      color: { dark: '#0f172a', light: '#ffffff' },
+    })
+      .then((url) => {
+        if (!cancelled) setQrisPreviewDataUrl(url);
+      })
+      .catch(() => {
+        if (!cancelled) setQrisPreviewDataUrl('');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sQrisPayload]);
 
   const filteredInvoices = useMemo(() => {
     const q = invSearch.trim().toLowerCase();
@@ -281,6 +346,11 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
     const ym = invDueDate.slice(0, 7).replace('-', '/');
     const invoiceNumber = `INV/${ym}/${seq}-${Math.floor(10 + Math.random() * 89)}`;
 
+    const cleanAthleteName = clampString(ath.fullName, LIMITS.athlete.fullNameMax);
+    const cleanParentName = clampString(ath.parentName || '', LIMITS.athlete.parentNameMax);
+    const cleanParentPhone = clampString(ath.parentPhone || '', LIMITS.athlete.parentPhoneMax);
+    const roundedAmount = Math.round(parsedAmount);
+
     setSavingInv(true);
     try {
       await addDoc(collection(db, 'invoices'), {
@@ -288,13 +358,13 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
         ownerId: userId,
         invoiceNumber,
         athleteId: ath.id,
-        athleteName: clampString(ath.fullName, LIMITS.athlete.fullNameMax),
-        parentName: clampString(ath.parentName || '', LIMITS.athlete.parentNameMax),
-        parentPhone: clampString(ath.parentPhone || '', LIMITS.athlete.parentPhoneMax),
+        athleteName: cleanAthleteName,
+        parentName: cleanParentName,
+        parentPhone: cleanParentPhone,
         periodMonth: cleanPeriod,
         category: invCategory,
         description: cleanDesc,
-        amount: Math.round(parsedAmount),
+        amount: roundedAmount,
         dueDate: invDueDate,
         status: 'Belum Lunas',
         paidDate: '',
@@ -304,6 +374,29 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
         updatedAt: serverTimestamp(),
       }).catch((err) => handleFirestoreError(err, OperationType.CREATE, 'invoices'));
       setCreateInvOpen(false);
+      setWaModalData({
+        title: 'Kirim Notifikasi Invoice ke Orang Tua',
+        description: `Invoice ${invoiceNumber} telah diterbitkan. Kirim pemberitahuan tagihan ke WhatsApp wali atlet.`,
+        recipients: [
+          {
+            id: invoiceNumber,
+            athleteName: cleanAthleteName,
+            parentName: cleanParentName,
+            parentPhone: cleanParentPhone,
+            subtitle: `${invoiceNumber} · ${formatRupiah(roundedAmount)}`,
+            message: buildInvoiceNotificationMessage(club, {
+              invoiceNumber,
+              athleteName: cleanAthleteName,
+              parentName: cleanParentName,
+              description: cleanDesc,
+              periodMonth: cleanPeriod,
+              amount: roundedAmount,
+              dueDate: invDueDate,
+              status: 'Belum Lunas',
+            }),
+          },
+        ],
+      });
     } catch (err) {
       setInvError(err instanceof Error ? err.message : 'Gagal membuat invoice.');
     } finally {
@@ -362,22 +455,30 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
     try {
       const batch = writeBatch(db);
       const ym = batchDueDate.slice(0, 7).replace('-', '/');
+      const createdRecipients: WhatsAppRecipientItem[] = [];
+
       targets.forEach((ath, idx) => {
         const seq = String(invoices.length + idx + 1).padStart(3, '0');
         const invNumber = `INV/${ym}/SPP-${seq}`;
         const ref = doc(collection(db, 'invoices'));
+        const cleanAthleteName = clampString(ath.fullName, LIMITS.athlete.fullNameMax);
+        const cleanParentName = clampString(ath.parentName || '', LIMITS.athlete.parentNameMax);
+        const cleanParentPhone = clampString(ath.parentPhone || '', LIMITS.athlete.parentPhoneMax);
+        const description = `Iuran Latihan Reguler ${ath.ageGroup} — ${cleanPeriod}`;
+        const roundedAmount = Math.round(ath.monthlyFee);
+
         batch.set(ref, {
           clubId: club.id,
           ownerId: userId,
           invoiceNumber: invNumber,
           athleteId: ath.id,
-          athleteName: clampString(ath.fullName, LIMITS.athlete.fullNameMax),
-          parentName: clampString(ath.parentName || '', LIMITS.athlete.parentNameMax),
-          parentPhone: clampString(ath.parentPhone || '', LIMITS.athlete.parentPhoneMax),
+          athleteName: cleanAthleteName,
+          parentName: cleanParentName,
+          parentPhone: cleanParentPhone,
           periodMonth: cleanPeriod,
           category: 'Iuran Bulanan (SPP)',
-          description: `Iuran Latihan Reguler ${ath.ageGroup} — ${cleanPeriod}`,
-          amount: Math.round(ath.monthlyFee),
+          description,
+          amount: roundedAmount,
           dueDate: batchDueDate,
           status: 'Belum Lunas',
           paidDate: '',
@@ -386,12 +487,37 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
+
+        createdRecipients.push({
+          id: invNumber,
+          athleteName: cleanAthleteName,
+          parentName: cleanParentName,
+          parentPhone: cleanParentPhone,
+          subtitle: `${invNumber} · ${formatRupiah(roundedAmount)}`,
+          message: buildInvoiceNotificationMessage(club, {
+            invoiceNumber: invNumber,
+            athleteName: cleanAthleteName,
+            parentName: cleanParentName,
+            description,
+            periodMonth: cleanPeriod,
+            amount: roundedAmount,
+            dueDate: batchDueDate,
+            status: 'Belum Lunas',
+          }),
+        });
       });
 
       await batch.commit().catch((err) =>
         handleFirestoreError(err, OperationType.WRITE, 'invoices/batch_spp')
       );
       setBatchOpen(false);
+      if (createdRecipients.length > 0) {
+        setWaModalData({
+          title: `Kirim Notifikasi SPP ${cleanPeriod}`,
+          description: `${createdRecipients.length} invoice SPP baru diterbitkan. Kirim tagihan langsung ke WhatsApp masing-masing orang tua.`,
+          recipients: createdRecipients,
+        });
+      }
     } catch (err) {
       setBatchError(err instanceof Error ? err.message : 'Gagal membuat tagihan massal.');
     } finally {
@@ -509,24 +635,48 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
     }
   };
 
+  const openSingleInvoiceWhatsApp = (inv: ClubInvoice) => {
+    const linkedAthlete = athletes.find((a) => a.id === inv.athleteId);
+    const parentName = inv.parentName || linkedAthlete?.parentName || '';
+    const parentPhone = inv.parentPhone || linkedAthlete?.parentPhone || '';
+
+    setWaModalData({
+      title: `Kirim Tagihan ${inv.invoiceNumber}`,
+      description: `Kirim detail tagihan dan informasi pembayaran ${inv.athleteName} ke WhatsApp orang tua.`,
+      recipients: [
+        {
+          id: inv.id,
+          athleteName: inv.athleteName,
+          parentName,
+          parentPhone,
+          subtitle: `${inv.invoiceNumber} · ${formatRupiah(inv.amount)}`,
+          message: buildInvoiceNotificationMessage(club, {
+            invoiceNumber: inv.invoiceNumber,
+            athleteName: inv.athleteName,
+            parentName,
+            description: inv.description,
+            periodMonth: inv.periodMonth,
+            amount: inv.amount,
+            dueDate: inv.dueDate,
+            status: inv.status,
+          }),
+        },
+      ],
+    });
+  };
+
   const handleCopyWhatsAppReminder = (inv: ClubInvoice) => {
-    const msg = [
-      `Yth. Bapak/Ibu ${inv.parentName || 'Wali Atlet'} (${inv.athleteName}),`,
-      ``,
-      `Berikut informasi tagihan resmi *${club.name}*:`,
-      `No. Invoice: ${inv.invoiceNumber}`,
-      `Keterangan: ${inv.description}`,
-      `Nominal: ${formatRupiah(inv.amount)}`,
-      `Jatuh Tempo: ${formatDateID(inv.dueDate)}`,
-      `Status: ${inv.status}`,
-      ``,
-      club.bankName
-        ? `Pembayaran via ${club.bankName} No. Rek ${club.bankAccountNumber || '-'} a.n. ${club.bankAccountHolder || club.name}.`
-        : '',
-      `Terima kasih atas dukungan Bapak/Ibu.`,
-    ]
-      .filter(Boolean)
-      .join('\n');
+    const linkedAthlete = athletes.find((a) => a.id === inv.athleteId);
+    const msg = buildInvoiceNotificationMessage(club, {
+      invoiceNumber: inv.invoiceNumber,
+      athleteName: inv.athleteName,
+      parentName: inv.parentName || linkedAthlete?.parentName || '',
+      description: inv.description,
+      periodMonth: inv.periodMonth,
+      amount: inv.amount,
+      dueDate: inv.dueDate,
+      status: inv.status,
+    });
 
     navigator.clipboard.writeText(msg);
     setCopiedWa(true);
@@ -626,13 +776,114 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
     }
   };
 
+  const persistQrisToClub = async (payload: string, merchantName: string, successMessage: string) => {
+    const cleanPayload = clampString(payload, LIMITS.club.qrisPayloadMax);
+    const cleanMerchant = clampString(merchantName, LIMITS.club.qrisMerchantNameMax);
+
+    await updateDoc(doc(db, 'clubs', club.id), {
+      qrisPayload: cleanPayload,
+      qrisMerchantName: cleanMerchant,
+      updatedAt: serverTimestamp(),
+    }).catch((err) => handleFirestoreError(err, OperationType.UPDATE, `clubs/${club.id}`));
+
+    setSQrisPayload(cleanPayload);
+    setSQrisMerchantName(cleanMerchant);
+    setSettingsFieldErrors((p) => ({ ...p, qrisPayload: undefined }));
+    setQrisUploadMsg(successMessage);
+    setTimeout(() => setQrisUploadMsg(null), 4500);
+  };
+
+  const handleQrisFileSelected = async (file: File | null | undefined) => {
+    if (!file) return;
+    setQrisUploadMsg(null);
+    setSettingsFieldErrors((p) => ({ ...p, qrisPayload: undefined }));
+    setQrisUploading(true);
+    try {
+      const decoded = await decodeQrisFromImageFile(file);
+      if (decoded.qrString.length > LIMITS.club.qrisPayloadMax) {
+        throw new Error(`Data QRIS melebihi batas ${LIMITS.club.qrisPayloadMax} karakter.`);
+      }
+      const nextMerchant = clampString(
+        decoded.merchantName || sQrisMerchantName || sName || club.name,
+        LIMITS.club.qrisMerchantNameMax
+      );
+      await persistQrisToClub(
+        decoded.qrString,
+        nextMerchant,
+        `Gambar QRIS berhasil dibaca dan disimpan (${nextMerchant}).`
+      );
+    } catch (err) {
+      setSettingsFieldErrors((p) => ({
+        ...p,
+        qrisPayload: err instanceof Error ? err.message : 'Gagal membaca gambar QRIS.',
+      }));
+    } finally {
+      setQrisUploading(false);
+      if (qrisFileInputRef.current) {
+        qrisFileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleUseSampleQris = async () => {
+    setQrisUploadMsg(null);
+    setSettingsFieldErrors((p) => ({ ...p, qrisPayload: undefined }));
+    setQrisUploading(true);
+    try {
+      const sample = buildSampleQrisPayload(sName || club.name, sCity || club.city);
+      const nextMerchant = clampString(
+        sQrisMerchantName.trim() || sName || club.name,
+        LIMITS.club.qrisMerchantNameMax
+      );
+      await persistQrisToClub(
+        sample,
+        nextMerchant,
+        'QRIS contoh uji coba aktif dan siap digunakan di invoice.'
+      );
+    } catch (err) {
+      setSettingsFieldErrors((p) => ({
+        ...p,
+        qrisPayload: err instanceof Error ? err.message : 'Gagal mengaktifkan contoh QRIS.',
+      }));
+    } finally {
+      setQrisUploading(false);
+    }
+  };
+
+  const handleRemoveQris = async () => {
+    setQrisUploadMsg(null);
+    setSettingsFieldErrors((p) => ({ ...p, qrisPayload: undefined }));
+    setQrisUploading(true);
+    try {
+      await persistQrisToClub('', '', 'QRIS klub telah dihapus.');
+    } catch (err) {
+      setSettingsFieldErrors((p) => ({
+        ...p,
+        qrisPayload: err instanceof Error ? err.message : 'Gagal menghapus QRIS.',
+      }));
+    } finally {
+      setQrisUploading(false);
+    }
+  };
+
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     setSettingsError(null);
     setSettingsSaved(false);
 
     const errors: FieldErrors<
-      'name' | 'city' | 'address' | 'coach' | 'fee' | 'phone' | 'email' | 'bankName' | 'bankNo' | 'bankHolder'
+      | 'name'
+      | 'city'
+      | 'address'
+      | 'coach'
+      | 'fee'
+      | 'phone'
+      | 'email'
+      | 'bankName'
+      | 'bankNo'
+      | 'bankHolder'
+      | 'qrisPayload'
+      | 'qrisMerchantName'
     > = {};
 
     const cleanName = clampString(sName, LIMITS.club.nameMax);
@@ -644,6 +895,9 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
     const cleanBankName = clampString(sBankName, LIMITS.club.bankNameMax);
     const cleanBankNo = clampString(sBankNo, LIMITS.club.bankAccountNumberMax);
     const cleanBankHolder = clampString(sBankHolder, LIMITS.club.bankAccountHolderMax);
+    const rawQrisPayload = sQrisPayload.trim();
+    const cleanQrisPayload = clampString(rawQrisPayload, LIMITS.club.qrisPayloadMax);
+    const cleanQrisMerchantName = clampString(sQrisMerchantName, LIMITS.club.qrisMerchantNameMax);
     const parsedFee = Number(sFee);
 
     if (cleanName.length < LIMITS.club.nameMin) {
@@ -690,6 +944,17 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
       }
     }
 
+    if (rawQrisPayload.length > LIMITS.club.qrisPayloadMax) {
+      errors.qrisPayload = `String QRIS maksimal ${LIMITS.club.qrisPayloadMax} karakter.`;
+    } else if (rawQrisPayload && !isValidQrisString(rawQrisPayload)) {
+      errors.qrisPayload =
+        'Format string QRIS EMVCo tidak valid (harus diawali 000201 dan berisi data merchant Indonesia).';
+    }
+
+    if (sQrisMerchantName.trim().length > LIMITS.club.qrisMerchantNameMax) {
+      errors.qrisMerchantName = `Nama merchant QRIS maksimal ${LIMITS.club.qrisMerchantNameMax} karakter.`;
+    }
+
     if (Object.keys(errors).length > 0) {
       setSettingsFieldErrors(errors);
       setSettingsError(Object.values(errors)[0] || 'Periksa kembali pengaturan profil klub.');
@@ -710,6 +975,8 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
         bankAccountNumber: cleanBankNo,
         bankAccountHolder: cleanBankHolder,
         defaultMonthlyFee: Math.round(parsedFee),
+        qrisPayload: cleanQrisPayload,
+        qrisMerchantName: cleanQrisMerchantName,
         updatedAt: serverTimestamp(),
       }).catch((err) => handleFirestoreError(err, OperationType.UPDATE, `clubs/${club.id}`));
       setSettingsSaved(true);
@@ -1010,13 +1277,22 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                           )}
                           <button
                             type="button"
+                            onClick={() => openSingleInvoiceWhatsApp(inv)}
+                            className="inline-flex items-center gap-1 px-3 min-h-[40px] text-xs font-medium text-emerald-700 bg-emerald-50 rounded-lg cursor-pointer"
+                          >
+                            <MessageCircle className="w-3.5 h-3.5" />
+                            Kirim WA
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => {
                               setCopiedWa(false);
                               setPreviewInv(inv);
                             }}
-                            className="px-3 min-h-[40px] text-xs font-medium text-sky-700 bg-sky-50 rounded-lg cursor-pointer"
+                            className="inline-flex items-center gap-1 px-3 min-h-[40px] text-xs font-medium text-sky-700 bg-sky-50 rounded-lg cursor-pointer"
                           >
-                            Cetak
+                            <QrCode className="w-3.5 h-3.5" />
+                            QR / Cetak
                           </button>
                           {confirmDeleteInvId === inv.id ? (
                             <div className="inline-flex items-center gap-1">
@@ -1131,12 +1407,20 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                               )}
                               <button
                                 type="button"
+                                onClick={() => openSingleInvoiceWhatsApp(inv)}
+                                className="p-1.5 text-emerald-700 hover:bg-emerald-50 rounded cursor-pointer"
+                                title="Kirim notifikasi WhatsApp orang tua"
+                              >
+                                <MessageCircle className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
                                 onClick={() => {
                                   setCopiedWa(false);
                                   setPreviewInv(inv);
                                 }}
                                 className="p-1.5 text-slate-500 hover:text-sky-700 rounded hover:bg-sky-50 cursor-pointer"
-                                title="Lihat & Cetak Invoice"
+                                title="Lihat QRIS & Cetak Invoice"
                               >
                                 <Printer className="w-4 h-4" />
                               </button>
@@ -1513,6 +1797,172 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                 )}
               </div>
             </div>
+          </div>
+
+          <div className="pt-4 border-t border-slate-200 space-y-4">
+            <div>
+              <h3 className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
+                <QrCode className="w-3.5 h-3.5 text-sky-700" />
+                Upload QRIS Pembayaran Klub
+              </h3>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Unggah gambar/screenshot kartu QRIS klub (PNG atau JPG). Sistem membaca data merchant secara otomatis dan menyisipkan nominal tagihan ke setiap invoice.
+              </p>
+            </div>
+
+            <input
+              ref={qrisFileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              className="sr-only"
+              onChange={(e) => handleQrisFileSelected(e.target.files?.[0])}
+            />
+
+            {qrisUploadMsg && (
+              <div className="p-3 rounded-lg border border-emerald-200 bg-emerald-50 text-xs text-emerald-800 flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                <span>{qrisUploadMsg}</span>
+              </div>
+            )}
+
+            {settingsFieldErrors.qrisPayload && (
+              <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-xs text-red-800 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
+                <span>{settingsFieldErrors.qrisPayload}</span>
+              </div>
+            )}
+
+            {isValidQrisString(sQrisPayload) ? (
+              <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/60 flex flex-col sm:flex-row items-center gap-4">
+                <div className="bg-white border border-slate-200 rounded-xl p-2.5 shrink-0 flex flex-col items-center">
+                  {qrisPreviewDataUrl ? (
+                    <img
+                      src={qrisPreviewDataUrl}
+                      alt="Pratinjau QRIS Klub"
+                      referrerPolicy="no-referrer"
+                      className="w-32 h-32 object-contain block"
+                    />
+                  ) : (
+                    <div className="w-32 h-32 flex items-center justify-center text-slate-400">
+                      <QrCode className="w-8 h-8" />
+                    </div>
+                  )}
+                  <span className="mt-1.5 text-[10px] font-semibold text-emerald-700">
+                    QRIS AKTIF
+                  </span>
+                </div>
+
+                <div className="flex-1 min-w-0 w-full space-y-3">
+                  <div>
+                    <div className="text-xs font-semibold text-slate-900">
+                      QRIS Terverifikasi & Siap Dipakai di Invoice
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">
+                      {(() => {
+                        const info = extractQrisMerchantInfo(sQrisPayload);
+                        return `Merchant terdaftar: ${info.merchantName || club.name} · ${info.merchantCity || club.city}`;
+                      })()}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">
+                      Nama Merchant di Invoice
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={LIMITS.club.qrisMerchantNameMax}
+                      value={sQrisMerchantName}
+                      onChange={(e) => {
+                        setSQrisMerchantName(e.target.value);
+                        setSettingsFieldErrors((p) => ({ ...p, qrisMerchantName: undefined }));
+                      }}
+                      placeholder={club.name}
+                      className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm bg-white border rounded-lg ${
+                        settingsFieldErrors.qrisMerchantName
+                          ? 'border-red-400 bg-red-50/40'
+                          : 'border-slate-200'
+                      }`}
+                    />
+                    {settingsFieldErrors.qrisMerchantName && (
+                      <p className="text-[11px] text-red-600 mt-1">
+                        {settingsFieldErrors.qrisMerchantName}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={qrisUploading}
+                      onClick={() => qrisFileInputRef.current?.click()}
+                      className="inline-flex items-center gap-1.5 px-3.5 min-h-[40px] sm:min-h-[36px] text-xs font-medium text-sky-700 bg-sky-50 hover:bg-sky-100 rounded-lg cursor-pointer disabled:opacity-60"
+                    >
+                      {qrisUploading ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Upload className="w-3.5 h-3.5" />
+                      )}
+                      Ganti Gambar QRIS
+                    </button>
+                    <button
+                      type="button"
+                      disabled={qrisUploading}
+                      onClick={handleRemoveQris}
+                      className="inline-flex items-center gap-1.5 px-3.5 min-h-[40px] sm:min-h-[36px] text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 rounded-lg cursor-pointer disabled:opacity-60"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Hapus QRIS
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const dropped = e.dataTransfer.files?.[0];
+                  handleQrisFileSelected(dropped);
+                }}
+                className="p-6 rounded-xl border border-dashed border-slate-300 bg-slate-50/50 text-center space-y-3"
+              >
+                <div className="w-11 h-11 rounded-xl bg-white border border-slate-200 mx-auto flex items-center justify-center text-sky-700">
+                  {qrisUploading ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <ImagePlus className="w-5 h-5" />
+                  )}
+                </div>
+                <div className="space-y-1">
+                  <div className="text-sm font-medium text-slate-900">
+                    {qrisUploading ? 'Membaca gambar QRIS...' : 'Unggah Foto / Screenshot QRIS Klub'}
+                  </div>
+                  <p className="text-xs text-slate-500 max-w-md mx-auto">
+                    Pilih file gambar QRIS dari galeri atau komputer (PNG, JPG, WEBP). Anda tidak perlu menyalin kode atau teks apa pun.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center justify-center gap-2.5 pt-1">
+                  <button
+                    type="button"
+                    disabled={qrisUploading}
+                    onClick={() => qrisFileInputRef.current?.click()}
+                    className="inline-flex items-center gap-2 px-4 min-h-[44px] sm:min-h-[38px] text-xs font-medium text-white bg-sky-700 hover:bg-sky-800 rounded-lg cursor-pointer disabled:opacity-60"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    Pilih Gambar QRIS
+                  </button>
+                  <button
+                    type="button"
+                    disabled={qrisUploading}
+                    onClick={handleUseSampleQris}
+                    className="inline-flex items-center gap-1.5 px-3.5 min-h-[44px] sm:min-h-[38px] text-xs font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg cursor-pointer disabled:opacity-60"
+                  >
+                    Coba Contoh QRIS Uji Coba
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="pt-2 flex justify-end">
@@ -1971,6 +2421,14 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                 </button>
                 <button
                   type="button"
+                  onClick={() => openSingleInvoiceWhatsApp(previewInv)}
+                  className="inline-flex items-center gap-2 px-3.5 min-h-[40px] text-xs font-medium text-white bg-emerald-700 rounded-lg hover:bg-emerald-800 cursor-pointer"
+                >
+                  <MessageCircle className="w-3.5 h-3.5" />
+                  Kirim ke WhatsApp
+                </button>
+                <button
+                  type="button"
                   onClick={() => handleCopyWhatsAppReminder(previewInv)}
                   className="inline-flex items-center gap-2 px-3.5 min-h-[40px] text-xs font-medium text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer"
                 >
@@ -2097,6 +2555,22 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                   )}
                 </div>
               </div>
+
+              {previewInv.status !== 'Dibatalkan' && (
+                <div className="pt-2">
+                  <QrisCodeCard
+                    club={club}
+                    invoiceNumber={previewInv.invoiceNumber}
+                    amount={previewInv.amount}
+                    athleteName={previewInv.athleteName}
+                    periodMonth={previewInv.periodMonth}
+                    onOpenQrisSettings={() => {
+                      setPreviewInv(null);
+                      setActiveTab('settings');
+                    }}
+                  />
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -2351,6 +2825,14 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
           </div>
         </div>
       )}
+
+      <WhatsAppNotifyModal
+        open={waModalData !== null}
+        onClose={() => setWaModalData(null)}
+        title={waModalData?.title || 'Notifikasi WhatsApp Orang Tua'}
+        description={waModalData?.description || ''}
+        recipients={waModalData?.recipients || []}
+      />
     </div>
   );
 };

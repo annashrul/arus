@@ -601,6 +601,10 @@ function SwimmingClubWorkspace() {
               pools={pools}
               equipment={equipment}
               competitions={competitions}
+              athletes={athletes}
+              schedules={schedules}
+              attendance={attendance}
+              swimTimes={swimTimes}
               onOpenPrint={() => setPrintReportKind('clubops')}
             />
           )}

@@ -322,6 +322,8 @@ export const LIMITS = {
     bankNameMax: entities.Club.properties.bankName.maxLength ?? 60,
     bankAccountNumberMax: entities.Club.properties.bankAccountNumber.maxLength ?? 40,
     bankAccountHolderMax: entities.Club.properties.bankAccountHolder.maxLength ?? 80,
+    qrisPayloadMax: entities.Club.properties.qrisPayload.maxLength ?? 512,
+    qrisMerchantNameMax: entities.Club.properties.qrisMerchantName.maxLength ?? 60,
   },
   athlete: {
     fullNameMin: entities.Athlete.properties.fullName.minLength ?? 2,

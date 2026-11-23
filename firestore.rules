@@ -74,7 +74,7 @@ service cloud.firestore {
 
     function isValidClub(data) {
       return data.keys().hasAll(['name', 'city', 'headCoach', 'defaultMonthlyFee', 'ownerId', 'createdAt', 'updatedAt'])
-        && data.keys().hasOnly(['name', 'city', 'address', 'headCoach', 'phone', 'email', 'bankName', 'bankAccountNumber', 'bankAccountHolder', 'defaultMonthlyFee', 'ownerId', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['name', 'city', 'address', 'headCoach', 'phone', 'email', 'bankName', 'bankAccountNumber', 'bankAccountHolder', 'qrisPayload', 'qrisMerchantName', 'defaultMonthlyFee', 'ownerId', 'createdAt', 'updatedAt'])
         && data.name is string && data.name.size() >= 2 && data.name.size() <= 100
         && data.city is string && data.city.size() >= 2 && data.city.size() <= 60
         && (!('address' in data) || (data.address is string && data.address.size() <= 200))
@@ -84,6 +84,8 @@ service cloud.firestore {
         && (!('bankName' in data) || (data.bankName is string && data.bankName.size() <= 60))
         && (!('bankAccountNumber' in data) || (data.bankAccountNumber is string && data.bankAccountNumber.size() <= 40))
         && (!('bankAccountHolder' in data) || (data.bankAccountHolder is string && data.bankAccountHolder.size() <= 80))
+        && (!('qrisPayload' in data) || (data.qrisPayload is string && data.qrisPayload.size() <= 512))
+        && (!('qrisMerchantName' in data) || (data.qrisMerchantName is string && data.qrisMerchantName.size() <= 60))
         && data.defaultMonthlyFee is number && data.defaultMonthlyFee >= 0 && data.defaultMonthlyFee <= 50000000
         && isValidId(data.ownerId)
         && data.createdAt is timestamp
@@ -315,7 +317,7 @@ service cloud.firestore {
         && incoming().createdAt == existing().createdAt
         && incoming().updatedAt == request.time
         && (isOwnerOfExisting() || isAdmin())
-        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'city', 'address', 'headCoach', 'phone', 'email', 'bankName', 'bankAccountNumber', 'bankAccountHolder', 'defaultMonthlyFee', 'updatedAt']);
+        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'city', 'address', 'headCoach', 'phone', 'email', 'bankName', 'bankAccountNumber', 'bankAccountHolder', 'qrisPayload', 'qrisMerchantName', 'defaultMonthlyFee', 'updatedAt']);
       allow delete: if isVerifiedUser() && isValidId(clubId) && (isOwnerOfExisting() || isAdmin());
     }
 

@@ -52,6 +52,7 @@ import {
   Edit3,
   Filter,
   MapPin,
+  MessageCircle,
   Plus,
   Printer,
   Trash2,
@@ -61,6 +62,8 @@ import {
 import { TrainingTrendChart } from './TrendCharts';
 import { ExportActionMenu } from './ExportActionMenu';
 import { BottomSheetSelect } from './BottomSheetSelect';
+import { WhatsAppNotifyModal, WhatsAppRecipientItem } from './WhatsAppNotifyModal';
+import { buildScheduleNotificationMessage, ScheduleMessageInput } from '../lib/whatsapp';
 
 interface SchedulesAndAttendanceViewProps {
   club: ClubProfile;
@@ -107,6 +110,13 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
   const [fieldErrors, setFieldErrors] = useState<FieldErrors<string>>({});
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [listError, setListError] = useState<string | null>(null);
+  const [notifyWaOnSave, setNotifyWaOnSave] = useState(false);
+  const [waScheduleModal, setWaScheduleModal] = useState<{
+    title: string;
+    description: string;
+    groupBroadcastMessage: string;
+    recipients: WhatsAppRecipientItem[];
+  } | null>(null);
 
   // Attendance controls
   const [selectedScheduleId, setSelectedScheduleId] = useState<string>(schedules[0]?.id || '');
@@ -211,6 +221,7 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
     setNotes('');
     setErrorMsg(null);
     setFieldErrors({});
+    setNotifyWaOnSave(false);
     setModalOpen(true);
   };
 
@@ -230,7 +241,41 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
     setNotes(sch.notes || '');
     setErrorMsg(null);
     setFieldErrors({});
+    setNotifyWaOnSave(true);
     setModalOpen(true);
+  };
+
+  const openScheduleWhatsApp = (sch: ScheduleMessageInput, isUpdated: boolean) => {
+    const matchingAthletes = athletes
+      .filter(
+        (a) =>
+          a.status !== 'Nonaktif' &&
+          (sch.ageGroup === 'Semua Kelompok' || a.ageGroup === sch.ageGroup)
+      )
+      .sort((a, b) => a.fullName.localeCompare(b.fullName));
+
+    const groupBroadcastMessage = buildScheduleNotificationMessage(club, sch, { isUpdated });
+    const recipients: WhatsAppRecipientItem[] = matchingAthletes.map((ath) => ({
+      id: ath.id,
+      athleteName: ath.fullName,
+      parentName: ath.parentName || '',
+      parentPhone: ath.parentPhone || '',
+      subtitle: ath.ageGroup,
+      message: buildScheduleNotificationMessage(club, sch, {
+        isUpdated,
+        parentName: ath.parentName,
+        athleteName: ath.fullName,
+      }),
+    }));
+
+    setWaScheduleModal({
+      title: isUpdated
+        ? `Kabari Perubahan Jadwal: ${sch.title}`
+        : `Bagikan Jadwal Latihan: ${sch.title}`,
+      description: `${matchingAthletes.length} atlet aktif di kelompok ${sch.ageGroup} (${sch.dayOfWeek}, ${sch.startTime}–${sch.endTime}). Kirim ke grup atau per orang tua.`,
+      groupBroadcastMessage,
+      recipients,
+    });
   };
 
   const liveSessionDurationMinutes = useMemo(() => {
@@ -268,6 +313,7 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
     }
     setFieldErrors({});
 
+    const isEditing = Boolean(editingSchedule);
     setSaving(true);
     try {
       const payload = {
@@ -302,6 +348,9 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
         }).catch((err) => handleFirestoreError(err, OperationType.CREATE, 'schedules'));
       }
       setModalOpen(false);
+      if (notifyWaOnSave) {
+        openScheduleWhatsApp(payload, isEditing);
+      }
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Gagal menyimpan jadwal.');
     } finally {
@@ -693,20 +742,30 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
                     )}
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedScheduleId(sch.id);
-                      if (sch.sessionDate && sch.sessionDate <= todayISO()) {
-                        setAttendanceDate(sch.sessionDate);
-                      }
-                      setAttendanceError(null);
-                      setActiveTab('attendance');
-                    }}
-                    className="w-full min-h-[44px] sm:min-h-[36px] text-xs font-medium text-sky-700 bg-sky-50 hover:bg-sky-100 rounded-lg transition-colors cursor-pointer"
-                  >
-                    Isi Presensi Sesi Ini
-                  </button>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedScheduleId(sch.id);
+                        if (sch.sessionDate && sch.sessionDate <= todayISO()) {
+                          setAttendanceDate(sch.sessionDate);
+                        }
+                        setAttendanceError(null);
+                        setActiveTab('attendance');
+                      }}
+                      className="w-full min-h-[44px] sm:min-h-[36px] text-xs font-medium text-sky-700 bg-sky-50 hover:bg-sky-100 rounded-lg transition-colors cursor-pointer"
+                    >
+                      Isi Presensi
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openScheduleWhatsApp(sch, true)}
+                      className="w-full min-h-[44px] sm:min-h-[36px] inline-flex items-center justify-center gap-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors cursor-pointer"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5" />
+                      Kabari WA
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -1260,6 +1319,18 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
                 )}
               </div>
 
+              <label className="flex items-start gap-2.5 p-3 rounded-lg bg-emerald-50/60 border border-emerald-200/80 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={notifyWaOnSave}
+                  onChange={(e) => setNotifyWaOnSave(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded border-slate-300 text-emerald-700 focus:ring-emerald-600"
+                />
+                <span className="text-xs text-slate-700 leading-relaxed">
+                  Siapkan notifikasi <strong>WhatsApp orang tua</strong> otomatis setelah jadwal ini disimpan.
+                </span>
+              </label>
+
               <div className="pt-4 border-t border-slate-200 grid grid-cols-2 sm:flex sm:justify-end gap-2.5">
                 <button
                   type="button"
@@ -1280,6 +1351,16 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
           </div>
         </div>
       )}
+
+      <WhatsAppNotifyModal
+        open={waScheduleModal !== null}
+        onClose={() => setWaScheduleModal(null)}
+        title={waScheduleModal?.title || 'Notifikasi Jadwal Latihan'}
+        description={waScheduleModal?.description || ''}
+        groupBroadcastMessage={waScheduleModal?.groupBroadcastMessage}
+        groupBroadcastLabel="Pesan Siaran Grup WA Orang Tua"
+        recipients={waScheduleModal?.recipients || []}
+      />
     </div>
   );
 };
