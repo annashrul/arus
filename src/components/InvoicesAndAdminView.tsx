@@ -1,15 +1,18 @@
+import { useUrlState } from '../lib/urlState';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import QRCode from 'qrcode';
+import { getBlob, ref, uploadBytes } from 'firebase/storage';
 import {
   addDoc,
   collection,
   deleteDoc,
   doc,
+  runTransaction,
   serverTimestamp,
   updateDoc,
   writeBatch,
 } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { db, storage, handleFirestoreError, OperationType } from '../lib/firebase';
 import {
   clampString,
   FieldErrors,
@@ -87,14 +90,14 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
   announcements,
   onOpenPrintReport,
 }) => {
-  const [activeTab, setActiveTab] = useState<'invoices' | 'letters' | 'settings'>('invoices');
+  const [activeTab, setActiveTab] = useUrlState<'invoices' | 'letters' | 'settings'>('invoices.tab', 'invoices', { values: ['invoices', 'letters', 'settings'], history: 'push' });
   const [listError, setListError] = useState<string | null>(null);
   const [confirmDeleteInvId, setConfirmDeleteInvId] = useState<string | null>(null);
   const [confirmDeleteAnnId, setConfirmDeleteAnnId] = useState<string | null>(null);
 
   // Invoice filters
-  const [invSearch, setInvSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [invSearch, setInvSearch] = useUrlState<string>('invoices.q', '');
+  const [statusFilter, setStatusFilter] = useUrlState<string>('invoices.status', 'all');
 
   // Create Invoice Modal
   const [createInvOpen, setCreateInvOpen] = useState(false);
@@ -120,7 +123,9 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
   const [savingBatch, setSavingBatch] = useState(false);
 
   // Settle / Mark Paid Modal
-  const [payModalInv, setPayModalInv] = useState<ClubInvoice | null>(null);
+  const [payModalInvId, setPayModalInvId] = useUrlState<string>('invoices.pay', '');
+  const payModalInv = invoices.find((inv) => inv.id === payModalInvId) || null;
+  const setPayModalInv = (inv: ClubInvoice | null) => setPayModalInvId(inv?.id || '');
   const [payDate, setPayDate] = useState(todayISO());
   const [payMethod, setPayMethod] = useState<PaymentMethod>('Transfer Bank');
   const [payNotes, setPayNotes] = useState('');
@@ -129,9 +134,12 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
     FieldErrors<'payDate' | 'payMethod' | 'payNotes'>
   >({});
   const [paying, setPaying] = useState(false);
+  const [proofBusyId, setProofBusyId] = useState<string | null>(null);
 
   // Preview / Print Invoice Modal
-  const [previewInv, setPreviewInv] = useState<ClubInvoice | null>(null);
+  const [previewInvId, setPreviewInvId] = useUrlState<string>('invoices.preview', '');
+  const previewInv = invoices.find((inv) => inv.id === previewInvId) || null;
+  const setPreviewInv = (inv: ClubInvoice | null) => setPreviewInvId(inv?.id || '');
   const [copiedWa, setCopiedWa] = useState(false);
 
   // WhatsApp Parent Notification Modal
@@ -236,7 +244,7 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
     const q = invSearch.trim().toLowerCase();
     return [...invoices]
       .filter((inv) => {
-        if (statusFilter !== 'all' && inv.status !== statusFilter) return false;
+        if (statusFilter === 'proof-pending' ? inv.paymentProofStatus !== 'pending' || inv.status === 'Lunas' : statusFilter !== 'all' && inv.status !== statusFilter) return false;
         if (q) {
           const hay = `${inv.invoiceNumber} ${inv.athleteName} ${inv.description} ${inv.periodMonth}`.toLowerCase();
           if (!hay.includes(q)) return false;
@@ -257,6 +265,10 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
     }
     return { paid, pending, overdue };
   }, [invoices]);
+
+  const pendingProofCount = invoices.filter(
+    (invoice) => invoice.paymentProofStatus === 'pending' && invoice.status !== 'Lunas'
+  ).length;
 
   const activeZeroFeeAthletesCount = useMemo(
     () => athletes.filter((a) => a.status === 'Aktif' && a.monthlyFee <= 0).length,
@@ -554,17 +566,9 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
     setPayFieldErrors({});
     setPaying(true);
     try {
-      const batch = writeBatch(db);
-      // 1. Update invoice to Lunas
-      batch.update(doc(db, 'invoices', payModalInv.id), {
-        status: 'Lunas',
-        paidDate: payDate,
-        paymentMethod: payMethod,
-        notes: clampString(payNotes || payModalInv.notes || '', LIMITS.invoice.notesMax),
-        updatedAt: serverTimestamp(),
-      });
-
-      // 2. Automatically record matching Pemasukan in transactions
+      const invoiceRef = doc(db, 'invoices', payModalInv.id);
+      const paymentRef = doc(db, 'transactions', `invoice_${payModalInv.id}`);
+      // Record matching income atomically with the invoice status.
       const txCategory =
         payModalInv.category === 'Iuran Bulanan (SPP)'
           ? 'Iuran Bulanan (SPP)'
@@ -574,7 +578,7 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
           ? 'Perlengkapan & Atribut'
           : 'Lainnya';
 
-      batch.set(doc(collection(db, 'transactions')), {
+      const payment = {
         clubId: club.id,
         ownerId: userId,
         type: 'pemasukan',
@@ -592,9 +596,22 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
         invoiceId: payModalInv.id,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-      });
-
-      await batch.commit().catch((err) =>
+      };
+      await runTransaction(db, async (transaction) => {
+        const snapshot = await transaction.get(invoiceRef);
+        if (!snapshot.exists() || !['Belum Lunas', 'Jatuh Tempo'].includes(snapshot.data().status)) {
+          throw new Error('Invoice ini sudah dilunasi atau tidak tersedia. Muat ulang daftar invoice.');
+        }
+        transaction.update(invoiceRef, {
+          status: 'Lunas',
+          ...(snapshot.data().paymentProofStatus === 'pending' ? { paymentProofStatus: 'verified' } : {}),
+          paidDate: payDate,
+          paymentMethod: payMethod,
+          notes: clampString(payNotes || payModalInv.notes || '', LIMITS.invoice.notesMax),
+          updatedAt: serverTimestamp(),
+        });
+        transaction.set(paymentRef, payment);
+      }).catch((err) =>
         handleFirestoreError(err, OperationType.WRITE, `invoices/${payModalInv.id}`)
       );
       setPayModalInv(null);
@@ -604,6 +621,90 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
       setPaying(false);
     }
   };
+
+  const handleUploadProof = async (inv: ClubInvoice, file?: File) => {
+    if (!file) return;
+    if (!['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(file.type) || file.size > 5 * 1024 * 1024) {
+      setListError('Bukti harus JPG, PNG, WebP atau PDF dengan ukuran maksimal 5 MB.');
+      return;
+    }
+    setListError(null);
+    setProofBusyId(inv.id);
+    try {
+      const extension = file.type === 'application/pdf' ? 'pdf' : file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg';
+      const path = `payment-proofs/${userId}/${inv.id}/${crypto.randomUUID()}.${extension}`;
+      await uploadBytes(ref(storage, path), file, { contentType: file.type });
+      await updateDoc(doc(db, 'invoices', inv.id), {
+        paymentProofPath: path,
+        paymentProofStatus: 'pending',
+        paymentProofSubmittedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err) {
+      setListError(err instanceof Error ? err.message : 'Gagal menyimpan bukti pembayaran.');
+    } finally {
+      setProofBusyId(null);
+    }
+  };
+
+  const handleViewProof = async (inv: ClubInvoice) => {
+    if (!inv.paymentProofPath) return;
+    setListError(null);
+    try {
+      const blob = await getBlob(ref(storage, inv.paymentProofPath));
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      document.body.append(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (err) {
+      setListError(err instanceof Error ? err.message : 'Gagal membuka bukti pembayaran.');
+    }
+  };
+
+  const handleRejectProof = async (inv: ClubInvoice) => {
+    setListError(null);
+    try {
+      await updateDoc(doc(db, 'invoices', inv.id), {
+        paymentProofStatus: 'rejected', updatedAt: serverTimestamp(),
+      });
+    } catch (err) {
+      setListError(err instanceof Error ? err.message : 'Gagal menolak bukti pembayaran.');
+    }
+  };
+
+  const proofActions = (inv: ClubInvoice) => (
+    <div className="flex flex-wrap items-center gap-2 text-xs">
+      {inv.paymentProofPath && (
+        <button type="button" onClick={() => void handleViewProof(inv)} className="text-sky-700 underline cursor-pointer">
+          Lihat bukti
+        </button>
+      )}
+      {inv.paymentProofStatus === 'pending' && inv.status !== 'Lunas' && (
+        <>
+          <span className="text-amber-700 font-semibold">Menunggu verifikasi</span>
+          <button type="button" onClick={() => {
+            setPayModalInv(inv); setPayDate(todayISO()); setPayMethod('Transfer Bank'); setPayNotes(''); setPayError(null); setPayFieldErrors({});
+          }} className="text-emerald-700 font-semibold underline cursor-pointer">Konfirmasi bayar</button>
+          <button type="button" onClick={() => void handleRejectProof(inv)} className="text-red-700 underline cursor-pointer">Tolak bukti</button>
+        </>
+      )}
+      {inv.paymentProofStatus === 'rejected' && <span className="text-red-700">Bukti ditolak</span>}
+      {(inv.status === 'Belum Lunas' || inv.status === 'Jatuh Tempo') && (
+        <label className="text-sky-700 underline cursor-pointer">
+          {proofBusyId === inv.id ? 'Mengunggah...' : inv.paymentProofPath ? 'Ganti bukti' : 'Unggah bukti dari orang tua'}
+          <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" className="sr-only"
+            disabled={proofBusyId === inv.id} onChange={(e) => {
+              void handleUploadProof(inv, e.target.files?.[0]); e.target.value = '';
+            }} />
+        </label>
+      )}
+    </div>
+  );
 
   const handleMarkOverdue = async (inv: ClubInvoice) => {
     setListError(null);
@@ -1151,6 +1252,12 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
 
       {activeTab === 'invoices' && (
         <div className="space-y-5 no-print">
+          {pendingProofCount > 0 && (
+            <button type="button" onClick={() => setStatusFilter('proof-pending')}
+              className="w-full text-left rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-medium text-amber-900 cursor-pointer">
+              {pendingProofCount} bukti pembayaran menunggu verifikasi. Lihat tagihan →
+            </button>
+          )}
           {/* Summary KPI */}
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
             <div className="bg-white border border-slate-200 rounded-xl p-3.5 sm:p-5 min-w-0">
@@ -1198,6 +1305,7 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                 resetLabel="Semua"
                 options={[
                   { value: 'all', label: 'Semua Status', badge: `${invoices.length}` },
+                  { value: 'proof-pending', label: 'Menunggu Verifikasi', badge: `${invoices.filter((i) => i.paymentProofStatus === 'pending' && i.status !== 'Lunas').length}` },
                   ...INVOICE_STATUSES.map((st) => ({
                     value: st,
                     label: st,
@@ -1234,6 +1342,7 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                           <div className="text-xs text-slate-500 mt-0.5">
                             {inv.description} · {inv.category}
                           </div>
+                          {proofActions(inv)}
                         </div>
                         <div className="text-right shrink-0">
                           <div className="font-mono-tabular text-sm font-bold text-slate-900">
@@ -1350,6 +1459,7 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                             <div className="text-xs text-slate-500">
                               {inv.description} · {inv.category}
                             </div>
+                            {proofActions(inv)}
                           </td>
                           <td className="py-3 px-4 font-mono-tabular text-xs text-slate-600 whitespace-nowrap">
                             {formatDateID(inv.dueDate)}
