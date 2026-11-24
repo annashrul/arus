@@ -25,6 +25,8 @@ import {
   X,
 } from 'lucide-react';
 import { BottomSheetSelect } from './BottomSheetSelect';
+import { InfiniteScrollSentinel } from './InfiniteScrollSentinel';
+import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
 
 interface RemindersDrawerProps {
   open: boolean;
@@ -70,6 +72,19 @@ export const RemindersDrawer: React.FC<RemindersDrawerProps> = ({
     () => reminders.filter((r) => !dismissedIds.includes(r.id) && r.severity === 'urgent').length,
     [reminders, dismissedIds]
   );
+
+  const {
+    visibleItems: paginatedReminders,
+    visibleCount: visibleReminderCount,
+    totalCount: totalReminderCount,
+    hasMore: hasMoreReminders,
+    loadMore: loadMoreReminders,
+    sentinelRef: remindersSentinelRef,
+  } = useInfiniteScroll(visibleReminders, {
+    initialCount: 15,
+    step: 15,
+    resetKey: `${filterCat}|${open ? '1' : '0'}`,
+  });
 
   if (!open) return null;
 
@@ -272,7 +287,8 @@ export const RemindersDrawer: React.FC<RemindersDrawerProps> = ({
               )}
             </div>
           ) : (
-            visibleReminders.map((r) => (
+            <>
+            {paginatedReminders.map((r) => (
               <div
                 key={r.id}
                 className={`border rounded-xl p-3.5 space-y-2.5 ${
@@ -345,7 +361,19 @@ export const RemindersDrawer: React.FC<RemindersDrawerProps> = ({
                   </button>
                 </div>
               </div>
-            ))
+            ))}
+            <div className="rounded-xl border border-slate-200 overflow-hidden">
+              <InfiniteScrollSentinel
+                sentinelRef={remindersSentinelRef}
+                visibleCount={visibleReminderCount}
+                totalCount={totalReminderCount}
+                hasMore={hasMoreReminders}
+                onLoadMore={loadMoreReminders}
+                itemLabel="pengingat"
+                compact
+              />
+            </div>
+            </>
           )}
         </div>
 

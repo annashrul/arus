@@ -376,6 +376,7 @@ function SwimmingClubWorkspace() {
     if (!activeClub) return [];
     return computeClubReminders({
       club: activeClub,
+      athletes,
       invoices,
       paymentRequests,
       schedules,
@@ -384,7 +385,7 @@ function SwimmingClubWorkspace() {
       competitions,
       equipment,
     });
-  }, [activeClub, invoices, paymentRequests, schedules, attendance, announcements, competitions, equipment]);
+  }, [activeClub, athletes, invoices, paymentRequests, schedules, attendance, announcements, competitions, equipment]);
 
   const activeReminders = useMemo(
     () => allReminders.filter((r) => !dismissedReminderIds.includes(r.id)),

@@ -30,7 +30,9 @@ import {
   downloadExcelWorkbook,
   downloadFullClubExcel,
 } from '../lib/exportUtils';
-import { Calendar, FileSpreadsheet, Printer, SlidersHorizontal, X } from 'lucide-react';
+import { downloadClubSummaryPdf } from '../lib/pdfExport';
+import { ExportActionMenu } from './ExportActionMenu';
+import { Calendar, SlidersHorizontal, X } from 'lucide-react';
 import { BottomSheetSelect } from './BottomSheetSelect';
 
 export type PrintReportKind =
@@ -247,6 +249,27 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
     }
   };
 
+  const handleDownloadPdf = () => {
+    downloadClubSummaryPdf({
+      kind: reportKind,
+      club,
+      orientation,
+      periodLabel: periodLabel[periodScope],
+      includeKop,
+      includeSignature,
+      athletes: sortedAthletes,
+      swimTimes: scopedSwimTimes,
+      transactions: scopedTransactions,
+      schedules: sortedSchedules,
+      attendance: scopedAttendance,
+      invoices: scopedInvoices,
+      coaches,
+      pools,
+      equipment,
+      competitions,
+    });
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/55 backdrop-blur-[1px] overflow-y-auto print:static print:bg-white print:overflow-visible">
       <style>{`@media print { @page { size: A4 ${orientation}; margin: 12mm; } }`}</style>
@@ -260,26 +283,39 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
                 Mode Cetak Laporan Resmi
               </h2>
               <p className="text-xs text-slate-500 truncate">
-                Pratinjau dokumen siap cetak A4 atau simpan sebagai PDF / Excel.
+                Pratinjau dokumen siap cetak A4 atau unduh langsung sebagai PDF / Excel.
               </p>
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={handleExportReportExcel}
-                className="hidden sm:inline-flex items-center gap-1.5 px-3 min-h-[38px] text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer"
-              >
-                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-700" />
-                Ekspor Excel
-              </button>
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="inline-flex items-center gap-1.5 px-4 min-h-[42px] sm:min-h-[38px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 cursor-pointer"
-              >
-                <Printer className="w-3.5 h-3.5" />
-                Cetak / PDF
-              </button>
+              <ExportActionMenu
+                label="Ekspor & Cetak"
+                variant="primary"
+                menuTitle="Pilih Format Dokumen"
+                options={[
+                  {
+                    id: 'modal-pdf',
+                    label: 'Download PDF (.pdf)',
+                    description: `Unduh ${reportTitles[reportKind]} (${orientation === 'landscape' ? 'Landscape' : 'Portrait'})`,
+                    format: 'pdf',
+                    onSelect: handleDownloadPdf,
+                  },
+                  {
+                    id: 'modal-excel',
+                    label: 'Ekspor Excel (.xlsx)',
+                    description: 'Unduh data laporan dalam format spreadsheet',
+                    format: 'excel',
+                    onSelect: handleExportReportExcel,
+                  },
+                  {
+                    id: 'modal-print',
+                    label: 'Cetak / Print A4',
+                    description: 'Buka dialog cetak browser atau simpan ke PDF sistem',
+                    format: 'print',
+                    dividerBefore: true,
+                    onSelect: () => window.print(),
+                  },
+                ]}
+              />
               <button
                 type="button"
                 onClick={onClose}

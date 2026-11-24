@@ -44,6 +44,11 @@ import {
   downloadExcelWorkbook,
   downloadSchedulesICS,
 } from '../lib/exportUtils';
+import { downloadClubSummaryPdf } from '../lib/pdfExport';
+import {
+  computeConsecutiveAbsences,
+  ConsecutiveAbsenceAlert,
+} from '../lib/attendanceAlerts';
 import {
   AlertTriangle,
   Calendar,
@@ -54,7 +59,6 @@ import {
   MapPin,
   MessageCircle,
   Plus,
-  Printer,
   Trash2,
   Users,
   X,
@@ -62,6 +66,8 @@ import {
 import { TrainingTrendChart } from './TrendCharts';
 import { ExportActionMenu } from './ExportActionMenu';
 import { BottomSheetSelect } from './BottomSheetSelect';
+import { InfiniteScrollSentinel } from './InfiniteScrollSentinel';
+import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
 import { WhatsAppNotifyModal, WhatsAppRecipientItem } from './WhatsAppNotifyModal';
 import { buildScheduleNotificationMessage, ScheduleMessageInput } from '../lib/whatsapp';
 import { batchSetQueryParams, useQueryParam } from '../lib/useQueryParams';
@@ -189,6 +195,37 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
       .sort((a, b) => a.fullName.localeCompare(b.fullName));
   }, [athletes, activeSchedule]);
 
+  const { alerts: consecutiveAbsenceAlerts, alertByAthleteId: absenceAlertByAthleteId } = useMemo(
+    () => computeConsecutiveAbsences(athletes, attendance, club, 3),
+    [athletes, attendance, club]
+  );
+
+  const {
+    visibleItems: visibleSchedules,
+    visibleCount: visibleScheduleCount,
+    totalCount: totalScheduleCount,
+    hasMore: hasMoreSchedules,
+    loadMore: loadMoreSchedules,
+    sentinelRef: schedulesSentinelRef,
+  } = useInfiniteScroll(filteredSchedules, {
+    initialCount: 12,
+    step: 12,
+    resetKey: `${activeTab}|${dayFilter}|${ageFilter}`,
+  });
+
+  const {
+    visibleItems: visibleAttendanceAthletes,
+    visibleCount: visibleAttendanceCount,
+    totalCount: totalAttendanceCount,
+    hasMore: hasMoreAttendance,
+    loadMore: loadMoreAttendance,
+    sentinelRef: attendanceSentinelRef,
+  } = useInfiniteScroll(matchingAthletesForSession, {
+    initialCount: 20,
+    step: 20,
+    resetKey: `${activeTab}|${activeSchedule?.id || ''}|${attendanceDate}`,
+  });
+
   const attendanceMapForSession = useMemo(() => {
     const map = new Map<string, AttendanceRecord>();
     if (!activeSchedule) return map;
@@ -279,6 +316,31 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
         : `Bagikan Jadwal Latihan: ${sch.title}`,
       description: `${matchingAthletes.length} atlet aktif di kelompok ${sch.ageGroup} (${sch.dayOfWeek}, ${sch.startTime}–${sch.endTime}). Kirim ke grup atau per orang tua.`,
       groupBroadcastMessage,
+      recipients,
+    });
+  };
+
+  const openAbsenceFollowUpWhatsApp = (targetAlerts: ConsecutiveAbsenceAlert[]) => {
+    if (targetAlerts.length === 0) return;
+    const isSingle = targetAlerts.length === 1;
+    const first = targetAlerts[0];
+    const recipients: WhatsAppRecipientItem[] = targetAlerts.map((al) => ({
+      id: al.athlete.id,
+      athleteName: al.athlete.fullName,
+      parentName: al.athlete.parentName || '',
+      parentPhone: al.athlete.parentPhone || '',
+      subtitle: `Absen ${al.streak}x beruntun (${al.breakdownSummary})`,
+      message: al.whatsappMessage,
+    }));
+
+    setWaScheduleModal({
+      title: isSingle
+        ? `Tindak Lanjut Presensi: ${first.athlete.fullName}`
+        : `Hubungi Orang Tua Atlet Absen >=3x (${targetAlerts.length} atlet)`,
+      description: isSingle
+        ? `Atlet tercatat tidak hadir ${first.streak} sesi berturut-turut (${first.breakdownSummary}). Kirim pesan perhatian ke orang tua/wali.`
+        : `Daftar atlet yang tidak hadir 3 sesi berturut-turut atau lebih. Kirim konfirmasi kehadiran satu per satu ke orang tua.`,
+      groupBroadcastMessage: first.whatsappMessage,
       recipients,
     });
   };
@@ -505,14 +567,30 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
 
         <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 shrink-0">
           <ExportActionMenu
-            label="Ekspor"
-            disabled={schedules.length === 0 && attendance.length === 0}
+            label="Ekspor & Cetak"
             options={[
+              {
+                id: 'sch-pdf',
+                label: 'Download PDF (.pdf)',
+                description: 'Rekap jadwal latihan, presensi & flag absen 3x',
+                format: 'pdf',
+                disabled: schedules.length === 0 && attendance.length === 0,
+                onSelect: () =>
+                  downloadClubSummaryPdf({
+                    kind: 'schedules',
+                    club,
+                    athletes,
+                    schedules: filteredSchedules,
+                    attendance,
+                    periodLabel: 'Jadwal & Presensi Aktif',
+                  }),
+              },
               {
                 id: 'sch-excel',
                 label: 'Ekspor Excel (.xlsx)',
                 description: '2 sheet: Matriks Jadwal & Log Presensi',
                 format: 'excel',
+                disabled: schedules.length === 0 && attendance.length === 0,
                 onSelect: handleExportSchedulesExcel,
               },
               {
@@ -539,20 +617,20 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
                 disabled: attendance.length === 0,
                 onSelect: handleExportAttendanceCSV,
               },
+              {
+                id: 'sch-print',
+                label: 'Mode Cetak Laporan A4',
+                description: 'Pratinjau dokumen cetak jadwal & presensi',
+                format: 'print',
+                dividerBefore: true,
+                onSelect: onOpenPrintReport,
+              },
             ]}
           />
           <button
             type="button"
-            onClick={onOpenPrintReport}
-            className="inline-flex items-center justify-center gap-1.5 px-3.5 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 whitespace-nowrap shrink-0 cursor-pointer"
-          >
-            <Printer className="w-3.5 h-3.5 text-sky-700" />
-            Cetak
-          </button>
-          <button
-            type="button"
             onClick={openCreateModal}
-            className="col-span-2 sm:col-span-1 inline-flex items-center justify-center gap-2 px-4 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 whitespace-nowrap shrink-0 cursor-pointer"
+            className="inline-flex items-center justify-center gap-2 px-4 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 whitespace-nowrap shrink-0 cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
             Tambah Jadwal Latihan
@@ -583,6 +661,11 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
           }`}
         >
           Presensi Sesi
+          {consecutiveAbsenceAlerts.length > 0 && (
+            <span className="ml-1.5 text-red-600 font-mono-tabular">
+              · {consecutiveAbsenceAlerts.length} absen 3x+
+            </span>
+          )}
         </button>
       </div>
 
@@ -659,125 +742,137 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {filteredSchedules.map((sch) => (
-                <div
-                  key={sch.id}
-                  className="bg-white border border-slate-200 rounded-xl p-5 flex flex-col justify-between gap-4"
-                >
-                  <div className="space-y-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="text-xs font-medium text-sky-700">
-                        {sch.dayOfWeek}
-                        {sch.sessionDate ? ` (${formatDateID(sch.sessionDate)})` : ''} ·{' '}
-                        <span className="font-mono-tabular">{sch.startTime}–{sch.endTime}</span>
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {visibleSchedules.map((sch) => (
+                  <div
+                    key={sch.id}
+                    className="bg-white border border-slate-200 rounded-xl p-5 flex flex-col justify-between gap-4"
+                  >
+                    <div className="space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="text-xs font-medium text-sky-700">
+                          {sch.dayOfWeek}
+                          {sch.sessionDate ? ` (${formatDateID(sch.sessionDate)})` : ''} ·{' '}
+                          <span className="font-mono-tabular">{sch.startTime}–{sch.endTime}</span>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {confirmDeleteId === sch.id ? (
+                            <div className="inline-flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteSchedule(sch)}
+                                className="px-2 py-1 text-[11px] font-semibold text-white bg-red-600 rounded hover:bg-red-700 cursor-pointer"
+                              >
+                                Hapus
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeleteId(null)}
+                                className="px-2 py-1 text-[11px] font-medium text-slate-600 bg-slate-100 rounded hover:bg-slate-200 cursor-pointer"
+                              >
+                                Batal
+                              </button>
+                            </div>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => openEditModal(sch)}
+                                className="p-1.5 text-slate-400 hover:text-slate-800 rounded cursor-pointer"
+                                title="Edit jadwal"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeleteId(sch.id)}
+                                className="p-1.5 text-slate-400 hover:text-red-600 rounded cursor-pointer"
+                                title="Hapus jadwal"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        {confirmDeleteId === sch.id ? (
-                          <div className="inline-flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteSchedule(sch)}
-                              className="px-2 py-1 text-[11px] font-semibold text-white bg-red-600 rounded hover:bg-red-700 cursor-pointer"
-                            >
-                              Hapus
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setConfirmDeleteId(null)}
-                              className="px-2 py-1 text-[11px] font-medium text-slate-600 bg-slate-100 rounded hover:bg-slate-200 cursor-pointer"
-                            >
-                              Batal
-                            </button>
-                          </div>
-                        ) : (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => openEditModal(sch)}
-                              className="p-1.5 text-slate-400 hover:text-slate-800 rounded cursor-pointer"
-                              title="Edit jadwal"
-                            >
-                              <Edit3 className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setConfirmDeleteId(sch.id)}
-                              className="p-1.5 text-slate-400 hover:text-red-600 rounded cursor-pointer"
-                              title="Hapus jadwal"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </>
-                        )}
+
+                      <div>
+                        <h3 className="font-display text-base font-semibold text-slate-900">
+                          {sch.title}
+                        </h3>
+                        <p className="text-xs text-slate-500 mt-1">
+                          {sch.sessionType} · {sch.ageGroup}
+                        </p>
                       </div>
+
+                      <div className="space-y-1.5 text-xs text-slate-600 pt-2 border-t border-slate-100">
+                        <div className="flex items-center gap-2">
+                          <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          <span>
+                            {sch.poolLocation}
+                            {sch.laneInfo ? ` (${sch.laneInfo})` : ''}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Users className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          <span>{sch.coachName}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          <span className="font-mono-tabular">
+                            Target volume: {sch.targetDistanceMeters.toLocaleString('id-ID')} meter
+                          </span>
+                        </div>
+                      </div>
+
+                      {sch.notes && (
+                        <p className="text-xs text-slate-500 leading-relaxed">{sch.notes}</p>
+                      )}
                     </div>
 
-                    <div>
-                      <h3 className="font-display text-base font-semibold text-slate-900">
-                        {sch.title}
-                      </h3>
-                      <p className="text-xs text-slate-500 mt-1">
-                        {sch.sessionType} · {sch.ageGroup}
-                      </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAttendanceError(null);
+                          batchSetQueryParams(
+                            {
+                              pr_sesi: sch.id,
+                              ...(sch.sessionDate && sch.sessionDate <= todayISO()
+                                ? { pr_tgl: sch.sessionDate }
+                                : {}),
+                              jd_tab: 'attendance',
+                            },
+                            'push'
+                          );
+                        }}
+                        className="w-full min-h-[44px] sm:min-h-[36px] text-xs font-medium text-sky-700 bg-sky-50 hover:bg-sky-100 rounded-lg transition-colors cursor-pointer"
+                      >
+                        Isi Presensi
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openScheduleWhatsApp(sch, true)}
+                        className="w-full min-h-[44px] sm:min-h-[36px] inline-flex items-center justify-center gap-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors cursor-pointer"
+                      >
+                        <MessageCircle className="w-3.5 h-3.5" />
+                        Kabari WA
+                      </button>
                     </div>
-
-                    <div className="space-y-1.5 text-xs text-slate-600 pt-2 border-t border-slate-100">
-                      <div className="flex items-center gap-2">
-                        <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                        <span>
-                          {sch.poolLocation}
-                          {sch.laneInfo ? ` (${sch.laneInfo})` : ''}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Users className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                        <span>{sch.coachName}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                        <span className="font-mono-tabular">
-                          Target volume: {sch.targetDistanceMeters.toLocaleString('id-ID')} meter
-                        </span>
-                      </div>
-                    </div>
-
-                    {sch.notes && (
-                      <p className="text-xs text-slate-500 leading-relaxed">{sch.notes}</p>
-                    )}
                   </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAttendanceError(null);
-                        batchSetQueryParams(
-                          {
-                            pr_sesi: sch.id,
-                            ...(sch.sessionDate && sch.sessionDate <= todayISO()
-                              ? { pr_tgl: sch.sessionDate }
-                              : {}),
-                            jd_tab: 'attendance',
-                          },
-                          'push'
-                        );
-                      }}
-                      className="w-full min-h-[44px] sm:min-h-[36px] text-xs font-medium text-sky-700 bg-sky-50 hover:bg-sky-100 rounded-lg transition-colors cursor-pointer"
-                    >
-                      Isi Presensi
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => openScheduleWhatsApp(sch, true)}
-                      className="w-full min-h-[44px] sm:min-h-[36px] inline-flex items-center justify-center gap-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors cursor-pointer"
-                    >
-                      <MessageCircle className="w-3.5 h-3.5" />
-                      Kabari WA
-                    </button>
-                  </div>
-                </div>
-              ))}
+                ))}
+              </div>
+              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                <InfiniteScrollSentinel
+                  sentinelRef={schedulesSentinelRef}
+                  visibleCount={visibleScheduleCount}
+                  totalCount={totalScheduleCount}
+                  hasMore={hasMoreSchedules}
+                  onLoadMore={loadMoreSchedules}
+                  itemLabel="jadwal latihan"
+                />
+              </div>
             </div>
           )}
         </>
@@ -853,6 +948,63 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
                 </div>
               )}
 
+              {consecutiveAbsenceAlerts.length > 0 && (
+                <div className="bg-red-50/70 border border-red-200 rounded-xl p-4 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                    <div className="flex items-start gap-2.5 min-w-0">
+                      <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                      <div className="min-w-0">
+                        <h3 className="font-display text-sm font-bold text-red-950">
+                          Peringatan Absen 3+ Sesi Berturut-turut ({consecutiveAbsenceAlerts.length} Atlet)
+                        </h3>
+                        <p className="text-xs text-red-800 mt-0.5">
+                          Atlet di bawah ini tercatat tidak hadir minimal 3 sesi beruntun pada catatan terakhir. Disarankan menghubungi orang tua/wali.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => openAbsenceFollowUpWhatsApp(consecutiveAbsenceAlerts)}
+                      className="inline-flex items-center justify-center gap-1.5 px-3.5 min-h-[40px] sm:min-h-[34px] text-xs font-semibold text-white bg-emerald-700 hover:bg-emerald-800 rounded-lg whitespace-nowrap shrink-0 cursor-pointer"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5" />
+                      Kabari Wali ({consecutiveAbsenceAlerts.length})
+                    </button>
+                  </div>
+
+                  <div className="divide-y divide-red-200/60 bg-white border border-red-200/80 rounded-lg overflow-hidden">
+                    {consecutiveAbsenceAlerts.map((al) => (
+                      <div
+                        key={al.athlete.id}
+                        className="px-3.5 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                      >
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-xs font-semibold text-slate-900">
+                              {al.athlete.fullName}
+                            </span>
+                            <span className="text-[11px] font-medium text-red-700 font-mono-tabular">
+                              {al.streak}x absen beruntun ({al.breakdownSummary})
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-slate-500 mt-0.5 truncate">
+                            {al.athlete.ageGroup} · Terakhir {formatDateID(al.lastSessionDate)} ({al.lastSessionTitle}) · Wali: {al.athlete.parentName || '-'}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => openAbsenceFollowUpWhatsApp([al])}
+                          className="inline-flex items-center justify-center gap-1 px-3 min-h-[36px] text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg whitespace-nowrap shrink-0 cursor-pointer self-start sm:self-auto"
+                        >
+                          <MessageCircle className="w-3.5 h-3.5" />
+                          Follow Up WA
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
                 {matchingAthletesForSession.length === 0 ? (
                   <div className="p-10 text-center text-sm text-slate-500">
@@ -862,18 +1014,39 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
                   <>
                     {/* Mobile Attendance Cards */}
                     <div className="md:hidden divide-y divide-slate-100">
-                      {matchingAthletesForSession.map((ath) => {
+                      {visibleAttendanceAthletes.map((ath) => {
                         const rec = attendanceMapForSession.get(ath.id);
+                        const streakAlert = absenceAlertByAthleteId.get(ath.id);
                         return (
-                          <div key={ath.id} className="p-4 space-y-3">
-                            <div className="flex items-center justify-between gap-2">
-                              <div>
+                          <div
+                            key={ath.id}
+                            className={`p-4 space-y-3 ${
+                              streakAlert ? 'bg-red-50/30' : ''
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
                                 <div className="font-medium text-sm text-slate-900">
                                   {ath.fullName}
                                 </div>
                                 <div className="text-xs text-slate-500">{ath.ageGroup}</div>
+                                {streakAlert && (
+                                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-700">
+                                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                                      Absen {streakAlert.streak}x beruntun ({streakAlert.breakdownSummary})
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => openAbsenceFollowUpWhatsApp([streakAlert])}
+                                      className="text-[11px] font-semibold text-emerald-700 underline cursor-pointer"
+                                    >
+                                      Kabari WA
+                                    </button>
+                                  </div>
+                                )}
                               </div>
-                              <div className="text-xs font-medium">
+                              <div className="text-xs font-medium shrink-0">
                                 {rec ? (
                                   <span
                                     className={
@@ -927,12 +1100,35 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 text-sm">
-                          {matchingAthletesForSession.map((ath) => {
+                          {visibleAttendanceAthletes.map((ath) => {
                             const rec = attendanceMapForSession.get(ath.id);
+                            const streakAlert = absenceAlertByAthleteId.get(ath.id);
                             return (
-                              <tr key={ath.id} className="hover:bg-slate-50/80">
-                                <td className="py-3 px-4 font-medium text-slate-900">
-                                  {ath.fullName}
+                              <tr
+                                key={ath.id}
+                                className={
+                                  streakAlert
+                                    ? 'bg-red-50/35 hover:bg-red-50/60'
+                                    : 'hover:bg-slate-50/80'
+                                }
+                              >
+                                <td className="py-3 px-4">
+                                  <div className="font-medium text-slate-900">{ath.fullName}</div>
+                                  {streakAlert && (
+                                    <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px]">
+                                      <span className="inline-flex items-center gap-1 font-semibold text-red-700">
+                                        <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                                        Absen {streakAlert.streak}x beruntun ({streakAlert.breakdownSummary})
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => openAbsenceFollowUpWhatsApp([streakAlert])}
+                                        className="font-semibold text-emerald-700 hover:underline cursor-pointer"
+                                      >
+                                        Follow Up WA
+                                      </button>
+                                    </div>
+                                  )}
                                 </td>
                                 <td className="py-3 px-4 text-xs text-slate-600">{ath.ageGroup}</td>
                                 <td className="py-3 px-4 text-xs font-medium">
@@ -957,34 +1153,43 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
                                 </td>
                                 <td className="py-3 px-4 text-right">
                                   <div className="inline-flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
-                                      {ATTENDANCE_STATUSES.map((st) => (
-                                        <button
-                                          key={st}
-                                          type="button"
-                                          disabled={markingId === ath.id || !!attendanceDateError}
-                                          onClick={() => handleMarkAttendance(ath, st)}
-                                          className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors cursor-pointer disabled:opacity-50 ${
-                                            rec?.status === st
-                                              ? 'bg-white text-slate-900 shadow-sm'
-                                              : 'text-slate-600 hover:text-slate-900'
-                                          }`}
-                                        >
-                                          {st}
-                                        </button>
-                                      ))}
-                                    </div>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </>
-            )}
+                                    {ATTENDANCE_STATUSES.map((st) => (
+                                      <button
+                                        key={st}
+                                        type="button"
+                                        disabled={markingId === ath.id || !!attendanceDateError}
+                                        onClick={() => handleMarkAttendance(ath, st)}
+                                        className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors cursor-pointer disabled:opacity-50 ${
+                                          rec?.status === st
+                                            ? 'bg-white text-slate-900 shadow-sm'
+                                            : 'text-slate-600 hover:text-slate-900'
+                                        }`}
+                                      >
+                                        {st}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <InfiniteScrollSentinel
+                      sentinelRef={attendanceSentinelRef}
+                      visibleCount={visibleAttendanceCount}
+                      totalCount={totalAttendanceCount}
+                      hasMore={hasMoreAttendance}
+                      onLoadMore={loadMoreAttendance}
+                      itemLabel="atlet"
+                    />
+                  </>
+                )}
+              </div>
+            </>
+          )}
           </div>
         )}
 

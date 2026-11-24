@@ -41,6 +41,7 @@ import {
   todayISO,
 } from '../types/club';
 import { buildInvoicesSheet, downloadExcelWorkbook } from '../lib/exportUtils';
+import { downloadClubSummaryPdf } from '../lib/pdfExport';
 import {
   AlertTriangle,
   Building2,
@@ -68,6 +69,8 @@ import {
 } from 'lucide-react';
 import { ExportActionMenu } from './ExportActionMenu';
 import { BottomSheetSelect } from './BottomSheetSelect';
+import { InfiniteScrollSentinel } from './InfiniteScrollSentinel';
+import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
 import { QrisCodeCard } from './QrisCodeCard';
 import { WhatsAppNotifyModal, WhatsAppRecipientItem } from './WhatsAppNotifyModal';
 import { buildInvoiceNotificationMessage } from '../lib/whatsapp';
@@ -351,6 +354,32 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [invoices, paymentRequests, invSearch, statusFilter]);
+
+  const {
+    visibleItems: visibleInvoices,
+    visibleCount: visibleInvCount,
+    totalCount: totalInvCount,
+    hasMore: hasMoreInvoices,
+    loadMore: loadMoreInvoices,
+    sentinelRef: invoicesSentinelRef,
+  } = useInfiniteScroll(filteredInvoices, {
+    initialCount: 20,
+    step: 20,
+    resetKey: `${activeTab}|${invSearch}|${statusFilter}`,
+  });
+
+  const {
+    visibleItems: visibleAnnouncements,
+    visibleCount: visibleAnnCount,
+    totalCount: totalAnnCount,
+    hasMore: hasMoreAnnouncements,
+    loadMore: loadMoreAnnouncements,
+    sentinelRef: announcementsSentinelRef,
+  } = useInfiniteScroll(announcements, {
+    initialCount: 12,
+    step: 12,
+    resetKey: activeTab,
+  });
 
   const invoiceTotals = useMemo(() => {
     let paid = 0;
@@ -1502,29 +1531,35 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                 setBatchOpen(true);
               }}
               disabled={athletes.filter((a) => a.status === 'Aktif').length === 0}
-              className="sm:order-3 inline-flex items-center justify-center gap-1.5 px-3 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 whitespace-nowrap cursor-pointer disabled:opacity-50"
+              className="sm:order-2 inline-flex items-center justify-center gap-1.5 px-3 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 whitespace-nowrap cursor-pointer disabled:opacity-50"
             >
               <Layers className="w-3.5 h-3.5 text-sky-700" />
               SPP Massal
             </button>
-            <button
-              type="button"
-              onClick={onOpenPrintReport}
-              className="sm:order-2 inline-flex items-center justify-center gap-1.5 px-3 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 whitespace-nowrap cursor-pointer"
-            >
-              <Printer className="w-3.5 h-3.5 text-sky-700" />
-              Cetak Rekap
-            </button>
             <ExportActionMenu
-              className="col-span-2 sm:col-span-1 sm:order-1"
-              label="Ekspor"
-              disabled={filteredInvoices.length === 0}
+              className="sm:order-1"
+              label="Ekspor & Cetak"
               options={[
+                {
+                  id: 'inv-pdf',
+                  label: 'Download PDF (.pdf)',
+                  description: `${filteredInvoices.length} tagihan sesuai filter`,
+                  format: 'pdf',
+                  disabled: filteredInvoices.length === 0,
+                  onSelect: () =>
+                    downloadClubSummaryPdf({
+                      kind: 'invoices',
+                      club,
+                      invoices: filteredInvoices,
+                      periodLabel: statusFilter === 'all' ? 'Semua Status' : statusFilter,
+                    }),
+                },
                 {
                   id: 'inv-excel',
                   label: 'Ekspor Excel (.xlsx)',
                   description: `${filteredInvoices.length} tagihan siap olah`,
                   format: 'excel',
+                  disabled: filteredInvoices.length === 0,
                   onSelect: handleExportInvoicesExcel,
                 },
                 {
@@ -1532,7 +1567,16 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                   label: 'Ekspor CSV (.csv)',
                   description: 'Format tabel standar untuk spreadsheet',
                   format: 'csv',
+                  disabled: filteredInvoices.length === 0,
                   onSelect: handleExportInvoicesCSV,
+                },
+                {
+                  id: 'inv-print',
+                  label: 'Mode Cetak Rekap A4',
+                  description: 'Pratinjau rekap tagihan resmi siap cetak',
+                  format: 'print',
+                  dividerBefore: true,
+                  onSelect: onOpenPrintReport,
                 },
               ]}
             />
@@ -1540,19 +1584,111 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
         )}
 
         {activeTab === 'letters' && (
-          <button
-            type="button"
-            onClick={() => {
-              setAnnError(null);
-              setAnnFieldErrors({});
-              setAnnAuthor(club.headCoach);
-              setAnnModalOpen(true);
-            }}
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 whitespace-nowrap cursor-pointer shrink-0"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Buat Surat / Pengumuman
-          </button>
+          <div className="grid grid-cols-2 sm:flex items-center gap-2 shrink-0">
+            <ExportActionMenu
+              label="Ekspor & Cetak"
+              options={[
+                {
+                  id: 'let-pdf',
+                  label: 'Download PDF (.pdf)',
+                  description: 'Rekap invoice & administrasi klub',
+                  format: 'pdf',
+                  disabled: filteredInvoices.length === 0,
+                  onSelect: () =>
+                    downloadClubSummaryPdf({
+                      kind: 'invoices',
+                      club,
+                      invoices: filteredInvoices,
+                      periodLabel: 'Rekap Invoice Klub',
+                    }),
+                },
+                {
+                  id: 'let-excel',
+                  label: 'Ekspor Excel (.xlsx)',
+                  description: `${filteredInvoices.length} tagihan siap olah`,
+                  format: 'excel',
+                  disabled: filteredInvoices.length === 0,
+                  onSelect: handleExportInvoicesExcel,
+                },
+                {
+                  id: 'let-csv',
+                  label: 'Ekspor CSV (.csv)',
+                  description: 'Format tabel standar untuk spreadsheet',
+                  format: 'csv',
+                  disabled: filteredInvoices.length === 0,
+                  onSelect: handleExportInvoicesCSV,
+                },
+                {
+                  id: 'let-print',
+                  label: 'Mode Cetak Rekap A4',
+                  description: 'Pratinjau laporan administrasi resmi',
+                  format: 'print',
+                  dividerBefore: true,
+                  onSelect: onOpenPrintReport,
+                },
+              ]}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setAnnError(null);
+                setAnnFieldErrors({});
+                setAnnAuthor(club.headCoach);
+                setAnnModalOpen(true);
+              }}
+              className="inline-flex items-center justify-center gap-2 px-4 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 whitespace-nowrap cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Buat Surat / Info
+            </button>
+          </div>
+        )}
+
+        {activeTab === 'settings' && (
+          <ExportActionMenu
+            className="w-full sm:w-auto shrink-0"
+            label="Ekspor & Cetak"
+            options={[
+              {
+                id: 'set-pdf',
+                label: 'Download PDF (.pdf)',
+                description: 'Rekap invoice & administrasi klub',
+                format: 'pdf',
+                disabled: filteredInvoices.length === 0,
+                onSelect: () =>
+                  downloadClubSummaryPdf({
+                    kind: 'invoices',
+                    club,
+                    invoices: filteredInvoices,
+                    periodLabel: 'Rekap Invoice Klub',
+                  }),
+              },
+              {
+                id: 'set-excel',
+                label: 'Ekspor Excel (.xlsx)',
+                description: `${filteredInvoices.length} tagihan siap olah`,
+                format: 'excel',
+                disabled: filteredInvoices.length === 0,
+                onSelect: handleExportInvoicesExcel,
+              },
+              {
+                id: 'set-csv',
+                label: 'Ekspor CSV (.csv)',
+                description: 'Format tabel standar untuk spreadsheet',
+                format: 'csv',
+                disabled: filteredInvoices.length === 0,
+                onSelect: handleExportInvoicesCSV,
+              },
+              {
+                id: 'set-print',
+                label: 'Mode Cetak Rekap A4',
+                description: 'Pratinjau laporan administrasi resmi',
+                format: 'print',
+                dividerBefore: true,
+                onSelect: onOpenPrintReport,
+              },
+            ]}
+          />
         )}
       </div>
 
@@ -1795,7 +1931,7 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
               <>
                 {/* Mobile Invoice Cards */}
                 <div className="md:hidden divide-y divide-slate-100">
-                  {filteredInvoices.map((inv) => {
+                  {visibleInvoices.map((inv) => {
                     const proof = getProofSummary(inv);
                     const isQuickBusy = quickConfirmingId === inv.id;
                     return (
@@ -1981,7 +2117,7 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-sm">
-                      {filteredInvoices.map((inv) => {
+                      {visibleInvoices.map((inv) => {
                         const proof = getProofSummary(inv);
                         const isQuickBusy = quickConfirmingId === inv.id;
                         return (
@@ -2173,6 +2309,15 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                     </tbody>
                   </table>
                 </div>
+
+                <InfiniteScrollSentinel
+                  sentinelRef={invoicesSentinelRef}
+                  visibleCount={visibleInvCount}
+                  totalCount={totalInvCount}
+                  hasMore={hasMoreInvoices}
+                  onLoadMore={loadMoreInvoices}
+                  itemLabel="invoice"
+                />
               </>
             )}
           </div>
@@ -2192,8 +2337,9 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
               </p>
             </div>
           ) : (
+            <>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {announcements.map((ann) => (
+              {visibleAnnouncements.map((ann) => (
                 <div
                   key={ann.id}
                   className="bg-white border border-slate-200 rounded-xl p-5 flex flex-col justify-between gap-4"
@@ -2255,6 +2401,17 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                 </div>
               ))}
             </div>
+            <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+              <InfiniteScrollSentinel
+                sentinelRef={announcementsSentinelRef}
+                visibleCount={visibleAnnCount}
+                totalCount={totalAnnCount}
+                hasMore={hasMoreAnnouncements}
+                onLoadMore={loadMoreAnnouncements}
+                itemLabel="dokumen"
+              />
+            </div>
+            </>
           )}
         </div>
       )}

@@ -1,4 +1,5 @@
 import {
+  Athlete,
   AttendanceRecord,
   ClubAnnouncement,
   ClubCompetition,
@@ -14,6 +15,7 @@ import {
 } from '../types/club';
 import { getDayOfWeekFromDate } from './validation';
 import { NavSection } from '../components/OverviewView';
+import { computeConsecutiveAbsences } from './attendanceAlerts';
 
 export type ReminderCategory =
   | 'invoice'
@@ -87,6 +89,7 @@ export function buildDailyScheduleWhatsAppDigest(
 
 export function computeClubReminders(params: {
   club: ClubProfile;
+  athletes?: Athlete[];
   invoices: ClubInvoice[];
   paymentRequests?: PaymentRequest[];
   schedules: TrainingSchedule[];
@@ -202,6 +205,27 @@ export function computeClubReminders(params: {
         : `${sch.ageGroup} · Pelatih ${sch.coachName} · Presensi hari ini belum dicatat`,
       targetNav: 'schedules',
       actionLabel: hasAttendance ? 'Lihat Jadwal' : 'Isi Presensi',
+    });
+  }
+
+  // 2b. Athletes absent >= 3 consecutive recorded training sessions
+  const { alerts: absenceAlerts } = computeConsecutiveAbsences(
+    params.athletes || [],
+    params.attendance,
+    params.club,
+    3
+  );
+  for (const al of absenceAlerts) {
+    items.push({
+      id: `att-streak-${al.athlete.id}`,
+      category: 'attendance',
+      severity: al.severity,
+      title: `Absen ${al.streak}x Beruntun: ${al.athlete.fullName}`,
+      description: `Tidak hadir ${al.streak} sesi terakhir (${al.breakdownSummary}) · ${al.athlete.ageGroup}`,
+      meta: `Terakhir: ${formatDateID(al.lastSessionDate)} (${al.lastSessionTitle}) · Wali: ${al.athlete.parentName || '-'}`,
+      targetNav: 'schedules',
+      whatsappText: al.whatsappMessage,
+      actionLabel: 'Cek Presensi',
     });
   }
 

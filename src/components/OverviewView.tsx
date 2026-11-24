@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   AGE_GROUPS,
   Athlete,
@@ -24,19 +24,21 @@ import {
   downloadJSONBackup,
   downloadSchedulesICS,
 } from '../lib/exportUtils';
+import { downloadClubSummaryPdf } from '../lib/pdfExport';
 import { ClubReminder } from '../lib/reminders';
 import { ExportActionMenu } from './ExportActionMenu';
 import { PrintReportKind } from './PrintReportModal';
 import {
+  Activity,
   AlertCircle,
   AlertTriangle,
+  ArrowDownLeft,
   ArrowUpRight,
   Award,
   Bell,
   CalendarDays,
   CheckCircle2,
   Clock,
-  Printer,
   Receipt,
   TrendingDown,
   TrendingUp,
@@ -97,6 +99,16 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
   onLoadSampleData,
   seedingSample,
 }) => {
+  const [todayDate, setTodayDate] = useState<string>(() => todayISO());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const latest = todayISO();
+      setTodayDate((prev) => (prev !== latest ? latest : prev));
+    }, 30000);
+    return () => window.clearInterval(timer);
+  }, []);
+
   const financeTotals = useMemo(() => {
     let income = 0;
     let expense = 0;
@@ -110,6 +122,46 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
       balance: income - expense,
     };
   }, [transactions]);
+
+  const todayCashflow = useMemo(() => {
+    let income = 0;
+    let expense = 0;
+    let incomeCount = 0;
+    let expenseCount = 0;
+    const items: FinanceTransaction[] = [];
+
+    for (const tx of transactions) {
+      if (tx.transactionDate !== todayDate) continue;
+      items.push(tx);
+      if (tx.type === 'pemasukan') {
+        income += tx.amount;
+        incomeCount += 1;
+      } else {
+        expense += tx.amount;
+        expenseCount += 1;
+      }
+    }
+
+    const totalVolume = income + expense;
+    const maxVal = Math.max(income, expense, 1);
+    const incomeSharePct = totalVolume > 0 ? Math.round((income / totalVolume) * 100) : 0;
+    const expenseSharePct = totalVolume > 0 ? 100 - incomeSharePct : 0;
+
+    return {
+      income,
+      expense,
+      net: income - expense,
+      incomeCount,
+      expenseCount,
+      totalCount: items.length,
+      totalVolume,
+      incomeBarPct: income > 0 ? Math.max(6, Math.round((income / maxVal) * 100)) : 0,
+      expenseBarPct: expense > 0 ? Math.max(6, Math.round((expense / maxVal) * 100)) : 0,
+      incomeSharePct,
+      expenseSharePct,
+      recentItems: items.slice(0, 3),
+    };
+  }, [transactions, todayDate]);
 
   const activeAthletesCount = useMemo(
     () => athletes.filter((a) => a.status === 'Aktif').length,
@@ -298,16 +350,39 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           </p>
         </div>
 
-        <div className="grid grid-cols-2 sm:flex items-center gap-2 shrink-0">
+        <div className="w-full sm:w-auto shrink-0">
           <ExportActionMenu
-            label="Ekspor Klub"
-            disabled={isEmptyClub}
+            label="Ekspor & Cetak"
             options={[
+              {
+                id: 'full-pdf',
+                label: 'Download PDF (.pdf)',
+                description: 'Ringkasan eksekutif klub siap bagikan atau arsip',
+                format: 'pdf',
+                disabled: isEmptyClub,
+                onSelect: () =>
+                  downloadClubSummaryPdf({
+                    kind: 'executive',
+                    club,
+                    athletes,
+                    swimTimes,
+                    transactions,
+                    schedules,
+                    attendance,
+                    invoices,
+                    coaches,
+                    pools,
+                    equipment,
+                    competitions,
+                    periodLabel: 'Seluruh Periode',
+                  }),
+              },
               {
                 id: 'full-excel',
                 label: 'Workbook Excel (.xlsx)',
                 description: 'Semua data klub (Kas, Atlet, Waktu, Jadwal, Presensi, Invoice, Pelatih & Klub)',
                 format: 'excel',
+                disabled: isEmptyClub,
                 onSelect: () =>
                   downloadFullClubExcel(club, {
                     athletes,
@@ -335,6 +410,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                 label: 'Backup Lengkap (.json)',
                 description: 'Arsip seluruh data klub termasuk pelatih, kolam & administrasi',
                 format: 'json',
+                disabled: isEmptyClub,
                 onSelect: () =>
                   downloadJSONBackup(club, {
                     athletes,
@@ -350,16 +426,16 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                     competitions,
                   }),
               },
+              {
+                id: 'print-executive',
+                label: 'Mode Cetak Laporan A4',
+                description: 'Pratinjau laporan resmi dengan kop surat & tanda tangan',
+                format: 'print',
+                dividerBefore: true,
+                onSelect: () => onOpenPrintReport('executive'),
+              },
             ]}
           />
-          <button
-            type="button"
-            onClick={() => onOpenPrintReport('executive')}
-            className="inline-flex items-center justify-center gap-1.5 px-3.5 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 whitespace-nowrap shrink-0 cursor-pointer"
-          >
-            <Printer className="w-3.5 h-3.5 text-sky-700" />
-            <span>Mode Cetak</span>
-          </button>
         </div>
       </div>
 
@@ -384,6 +460,180 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           </button>
         </div>
       )}
+
+      {/* Real-Time Today's Cashflow Visual */}
+      <section
+        aria-label="Arus Kas Real-Time Hari Ini"
+        className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 space-y-4"
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+          <div className="flex items-start gap-2.5 min-w-0">
+            <Activity className="w-4 h-4 text-sky-700 shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                <h2 className="font-display text-sm sm:text-base font-semibold text-slate-900">
+                  Arus Kas Hari Ini (Real-Time)
+                </h2>
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-700">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" aria-hidden="true" />
+                  Live · {formatDateID(todayDate)}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5 font-mono-tabular">
+                {todayCashflow.totalCount} transaksi tercatat hari ini ({todayCashflow.incomeCount} masuk · {todayCashflow.expenseCount} keluar)
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => onNavigate('finance')}
+            className="text-xs font-medium text-sky-700 hover:text-sky-800 inline-flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer self-start sm:self-auto"
+          >
+            Buka Buku Kas <ArrowUpRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        {/* 3 Real-Time Numeric Columns + Visual Comparison Bars */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
+          {/* Kas Masuk Hari Ini */}
+          <div className="border border-slate-200 rounded-lg p-3.5 space-y-2 bg-emerald-50/25">
+            <div className="flex items-center justify-between text-xs text-slate-600">
+              <span className="inline-flex items-center gap-1.5 font-medium">
+                <ArrowDownLeft className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+                Kas Masuk Hari Ini
+              </span>
+              <span className="font-mono-tabular text-[11px] text-slate-500">
+                {todayCashflow.incomeCount} trx
+              </span>
+            </div>
+            <div className="font-mono-tabular text-lg sm:text-xl font-bold text-emerald-700 truncate">
+              +{formatRupiah(todayCashflow.income)}
+            </div>
+            <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-emerald-600 transition-all duration-300"
+                style={{ width: `${todayCashflow.incomeBarPct}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Kas Keluar Hari Ini */}
+          <div className="border border-slate-200 rounded-lg p-3.5 space-y-2 bg-red-50/20">
+            <div className="flex items-center justify-between text-xs text-slate-600">
+              <span className="inline-flex items-center gap-1.5 font-medium">
+                <ArrowUpRight className="w-3.5 h-3.5 text-red-600 shrink-0" />
+                Kas Keluar Hari Ini
+              </span>
+              <span className="font-mono-tabular text-[11px] text-slate-500">
+                {todayCashflow.expenseCount} trx
+              </span>
+            </div>
+            <div className="font-mono-tabular text-lg sm:text-xl font-bold text-red-700 truncate">
+              -{formatRupiah(todayCashflow.expense)}
+            </div>
+            <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-red-500 transition-all duration-300"
+                style={{ width: `${todayCashflow.expenseBarPct}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Selisih Bersih Hari Ini */}
+          <div className="border border-slate-200 rounded-lg p-3.5 space-y-2 bg-slate-50/60">
+            <div className="flex items-center justify-between text-xs text-slate-600">
+              <span className="font-medium">Selisih Bersih Hari Ini</span>
+              <span
+                className={`font-mono-tabular text-[11px] font-semibold ${
+                  todayCashflow.net > 0
+                    ? 'text-emerald-700'
+                    : todayCashflow.net < 0
+                    ? 'text-red-700'
+                    : 'text-slate-500'
+                }`}
+              >
+                {todayCashflow.net > 0
+                  ? 'Surplus'
+                  : todayCashflow.net < 0
+                  ? 'Defisit'
+                  : 'Seimbang'}
+              </span>
+            </div>
+            <div
+              className={`font-mono-tabular text-lg sm:text-xl font-bold truncate ${
+                todayCashflow.net > 0
+                  ? 'text-emerald-700'
+                  : todayCashflow.net < 0
+                  ? 'text-red-700'
+                  : 'text-slate-900'
+              }`}
+            >
+              {todayCashflow.net > 0 ? '+' : ''}
+              {formatRupiah(todayCashflow.net)}
+            </div>
+            <div className="text-[11px] text-slate-500 font-mono-tabular truncate">
+              Proporsi: {todayCashflow.incomeSharePct}% masuk · {todayCashflow.expenseSharePct}% keluar
+            </div>
+          </div>
+        </div>
+
+        {/* Visual Split Ratio Bar & Today's Activity Strip */}
+        <div className="space-y-2.5 pt-1">
+          <div
+            className="h-2.5 w-full bg-slate-100 rounded-full overflow-hidden flex"
+            role="img"
+            aria-label={`Proporsi kas hari ini: ${todayCashflow.incomeSharePct}% masuk, ${todayCashflow.expenseSharePct}% keluar`}
+          >
+            {todayCashflow.totalVolume > 0 ? (
+              <>
+                {todayCashflow.income > 0 && (
+                  <div
+                    className="h-full bg-emerald-600 transition-all duration-300"
+                    style={{ width: `${todayCashflow.incomeSharePct}%` }}
+                  />
+                )}
+                {todayCashflow.expense > 0 && (
+                  <div
+                    className="h-full bg-red-500 transition-all duration-300"
+                    style={{ width: `${todayCashflow.expenseSharePct}%` }}
+                  />
+                )}
+              </>
+            ) : (
+              <div className="h-full w-full bg-slate-200/70" />
+            )}
+          </div>
+
+          {todayCashflow.recentItems.length > 0 ? (
+            <div className="divide-y divide-slate-100 border-t border-slate-100 pt-1">
+              {todayCashflow.recentItems.map((tx) => (
+                <div
+                  key={tx.id}
+                  className="py-1.5 flex items-center justify-between gap-3 text-xs"
+                >
+                  <div className="min-w-0 truncate text-slate-700">
+                    <span className="font-medium text-slate-900">{tx.description}</span>
+                    <span className="text-slate-400 mx-1.5">·</span>
+                    <span className="text-slate-500">{tx.category}</span>
+                  </div>
+                  <span
+                    className={`font-mono-tabular font-semibold whitespace-nowrap shrink-0 ${
+                      tx.type === 'pemasukan' ? 'text-emerald-700' : 'text-red-700'
+                    }`}
+                  >
+                    {tx.type === 'pemasukan' ? '+' : '-'}
+                    {formatRupiah(tx.amount)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-slate-500">
+              Belum ada arus kas tercatat hari ini ({formatDateID(todayDate)}). Transaksi baru atau pelunasan invoice akan muncul otomatis secara real-time di panel ini.
+            </p>
+          )}
+        </div>
+      </section>
 
       {/* Executive Login Brief: Active Athletes & Current Month Billing Status */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5">

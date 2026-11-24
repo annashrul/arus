@@ -46,6 +46,7 @@ import {
   buildSwimTimesSheet,
   downloadExcelWorkbook,
 } from '../lib/exportUtils';
+import { downloadClubSummaryPdf } from '../lib/pdfExport';
 import {
   AlertTriangle,
   Award,
@@ -55,7 +56,6 @@ import {
   Eye,
   Filter,
   Plus,
-  Printer,
   Search,
   Timer,
   Trash2,
@@ -67,6 +67,8 @@ import {
 import { AthleteCompetitionChart } from './TrendCharts';
 import { ExportActionMenu } from './ExportActionMenu';
 import { BottomSheetSelect } from './BottomSheetSelect';
+import { InfiniteScrollSentinel } from './InfiniteScrollSentinel';
+import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
 import { useQueryParam } from '../lib/useQueryParams';
 
 interface AthletesAndTimesViewProps {
@@ -206,6 +208,32 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
       })
       .sort((a, b) => b.meetDate.localeCompare(a.meetDate));
   }, [swimTimes, timeSearch, strokeFilter, courseFilter, onlyPB]);
+
+  const {
+    visibleItems: visibleAthletes,
+    visibleCount: visibleAthletesCount,
+    totalCount: totalAthletesCount,
+    hasMore: hasMoreAthletes,
+    loadMore: loadMoreAthletes,
+    sentinelRef: athletesSentinelRef,
+  } = useInfiniteScroll(filteredAthletes, {
+    initialCount: 20,
+    step: 20,
+    resetKey: `${activeTab}|${athleteSearch}|${ageGroupFilter}|${statusFilter}|${coachFilter}`,
+  });
+
+  const {
+    visibleItems: visibleTimes,
+    visibleCount: visibleTimesCount,
+    totalCount: totalTimesCount,
+    hasMore: hasMoreTimes,
+    loadMore: loadMoreTimes,
+    sentinelRef: timesSentinelRef,
+  } = useInfiniteScroll(filteredTimes, {
+    initialCount: 20,
+    step: 20,
+    resetKey: `${activeTab}|${timeSearch}|${strokeFilter}|${courseFilter}|${onlyPB}`,
+  });
 
   const athletePBMap = useMemo(() => {
     const map = new Map<string, number>();
@@ -659,14 +687,29 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
 
         <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 shrink-0">
           <ExportActionMenu
-            label="Ekspor"
-            disabled={filteredAthletes.length === 0 && filteredTimes.length === 0}
+            label="Ekspor & Cetak"
             options={[
+              {
+                id: 'ath-pdf',
+                label: 'Download PDF (.pdf)',
+                description: 'Rekap database atlet & catatan waktu resmi',
+                format: 'pdf',
+                disabled: filteredAthletes.length === 0 && filteredTimes.length === 0,
+                onSelect: () =>
+                  downloadClubSummaryPdf({
+                    kind: 'athletes',
+                    club,
+                    athletes: filteredAthletes,
+                    swimTimes: filteredTimes,
+                    periodLabel: 'Sesuai Filter Aktif',
+                  }),
+              },
               {
                 id: 'ath-excel',
                 label: 'Ekspor Excel (.xlsx)',
                 description: '2 sheet: Daftar Atlet & Catatan Waktu Kejuaraan',
                 format: 'excel',
+                disabled: filteredAthletes.length === 0 && filteredTimes.length === 0,
                 onSelect: handleExportAthletesExcel,
               },
               {
@@ -685,21 +728,21 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                 disabled: filteredTimes.length === 0,
                 onSelect: handleExportTimesCSV,
               },
+              {
+                id: 'ath-print',
+                label: 'Mode Cetak Laporan A4',
+                description: 'Pratinjau dokumen cetak atlet & waktu',
+                format: 'print',
+                dividerBefore: true,
+                onSelect: onOpenPrintReport,
+              },
             ]}
           />
-          <button
-            type="button"
-            onClick={onOpenPrintReport}
-            className="inline-flex items-center justify-center gap-1.5 px-3.5 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 whitespace-nowrap shrink-0 cursor-pointer"
-          >
-            <Printer className="w-3.5 h-3.5 text-sky-700" />
-            Cetak
-          </button>
           {activeTab === 'athletes' ? (
             <button
               type="button"
               onClick={openCreateAthlete}
-              className="col-span-2 sm:col-span-1 inline-flex items-center justify-center gap-1.5 px-4 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 whitespace-nowrap shrink-0 cursor-pointer"
+              className="inline-flex items-center justify-center gap-1.5 px-4 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 whitespace-nowrap shrink-0 cursor-pointer"
             >
               <UserPlus className="w-3.5 h-3.5" />
               Tambah Atlet
@@ -709,7 +752,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
               type="button"
               onClick={() => openCreateTime()}
               disabled={athletes.length === 0}
-              className="col-span-2 sm:col-span-1 inline-flex items-center justify-center gap-1.5 px-4 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50"
+              className="inline-flex items-center justify-center gap-1.5 px-4 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50"
             >
               <Plus className="w-3.5 h-3.5" />
               Catat Waktu
@@ -859,7 +902,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
               <>
                 {/* Mobile Athlete Cards */}
                 <div className="md:hidden divide-y divide-slate-100">
-                  {filteredAthletes.map((ath) => (
+                  {visibleAthletes.map((ath) => (
                     <div key={ath.id} className="p-4 space-y-2.5">
                       <div className="flex items-start justify-between gap-2">
                         <div>
@@ -962,7 +1005,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-sm">
-                      {filteredAthletes.map((ath) => (
+                      {visibleAthletes.map((ath) => (
                         <tr key={ath.id} className="hover:bg-slate-50/80 transition-colors">
                           <td className="py-3 px-4">
                             <button
@@ -1059,6 +1102,15 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                     </tbody>
                   </table>
                 </div>
+
+                <InfiniteScrollSentinel
+                  sentinelRef={athletesSentinelRef}
+                  visibleCount={visibleAthletesCount}
+                  totalCount={totalAthletesCount}
+                  hasMore={hasMoreAthletes}
+                  onLoadMore={loadMoreAthletes}
+                  itemLabel="atlet"
+                />
               </>
             )}
           </div>
@@ -1146,7 +1198,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
               <>
                 {/* Mobile Swim Times Cards */}
                 <div className="md:hidden divide-y divide-slate-100">
-                  {filteredTimes.map((st) => (
+                  {visibleTimes.map((st) => (
                     <div key={st.id} className="p-4 space-y-2">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
@@ -1230,7 +1282,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-sm">
-                      {filteredTimes.map((st) => (
+                      {visibleTimes.map((st) => (
                         <tr key={st.id} className="hover:bg-slate-50/80 transition-colors">
                           <td className="py-3 px-4 font-mono-tabular text-xs text-slate-600 whitespace-nowrap">
                             {formatDateID(st.meetDate)}
@@ -1308,6 +1360,15 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                     </tbody>
                   </table>
                 </div>
+
+                <InfiniteScrollSentinel
+                  sentinelRef={timesSentinelRef}
+                  visibleCount={visibleTimesCount}
+                  totalCount={totalTimesCount}
+                  hasMore={hasMoreTimes}
+                  onLoadMore={loadMoreTimes}
+                  itemLabel="catatan waktu"
+                />
               </>
             )}
           </div>

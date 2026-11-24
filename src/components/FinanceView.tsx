@@ -30,6 +30,7 @@ import {
   TransactionType,
 } from '../types/club';
 import { buildFinanceSheet, downloadExcelWorkbook } from '../lib/exportUtils';
+import { downloadClubSummaryPdf } from '../lib/pdfExport';
 import {
   AlertTriangle,
   ArrowDownLeft,
@@ -38,7 +39,6 @@ import {
   Edit3,
   Filter,
   Plus,
-  Printer,
   Search,
   Trash2,
   User,
@@ -47,6 +47,8 @@ import {
 import { CashflowTrendChart } from './TrendCharts';
 import { ExportActionMenu } from './ExportActionMenu';
 import { BottomSheetSelect } from './BottomSheetSelect';
+import { InfiniteScrollSentinel } from './InfiniteScrollSentinel';
+import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
 import { useQueryParam } from '../lib/useQueryParams';
 
 interface FinanceViewProps {
@@ -128,6 +130,19 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
       })
       .sort((a, b) => b.transactionDate.localeCompare(a.transactionDate));
   }, [transactions, filterType, filterCategory, monthFilter, searchQuery]);
+
+  const {
+    visibleItems: visibleTransactions,
+    visibleCount: visibleTxCount,
+    totalCount: totalTxCount,
+    hasMore: hasMoreTx,
+    loadMore: loadMoreTx,
+    sentinelRef: txSentinelRef,
+  } = useInfiniteScroll(filtered, {
+    initialCount: 20,
+    step: 20,
+    resetKey: `${filterType}|${filterCategory}|${monthFilter}|${searchQuery}`,
+  });
 
   const summary = useMemo(() => {
     let totalIncome = 0;
@@ -337,7 +352,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
           <button
             type="button"
             onClick={() => openCreateModal('pemasukan')}
-            className="col-span-2 sm:col-span-1 sm:order-4 inline-flex items-center justify-center gap-2 px-4 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            className="col-span-2 sm:col-span-1 sm:order-3 inline-flex items-center justify-center gap-2 px-4 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
             Catat Pemasukan
@@ -345,21 +360,37 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
           <button
             type="button"
             onClick={() => openCreateModal('pengeluaran')}
-            className="sm:order-3 inline-flex items-center justify-center gap-1.5 px-3.5 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            className="sm:order-2 inline-flex items-center justify-center gap-1.5 px-3.5 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5 text-red-600" />
             Pengeluaran
           </button>
           <ExportActionMenu
             className="sm:order-1"
-            label="Ekspor"
-            disabled={filtered.length === 0}
+            label="Ekspor & Cetak"
             options={[
+              {
+                id: 'fin-pdf',
+                label: 'Download PDF (.pdf)',
+                description: `${filtered.length} transaksi & ringkasan kas`,
+                format: 'pdf',
+                disabled: filtered.length === 0,
+                onSelect: () =>
+                  downloadClubSummaryPdf({
+                    kind: 'finance',
+                    club,
+                    transactions: filtered,
+                    periodLabel: monthFilter
+                      ? monthOptions.find((m) => m.value === monthFilter)?.label || monthFilter
+                      : 'Semua Bulan',
+                  }),
+              },
               {
                 id: 'fin-excel',
                 label: 'Ekspor Excel (.xlsx)',
                 description: `${filtered.length} transaksi terformat siap olah`,
                 format: 'excel',
+                disabled: filtered.length === 0,
                 onSelect: handleExportExcel,
               },
               {
@@ -367,18 +398,19 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                 label: 'Ekspor CSV (.csv)',
                 description: 'Format tabel standar untuk spreadsheet',
                 format: 'csv',
+                disabled: filtered.length === 0,
                 onSelect: handleExportCSV,
+              },
+              {
+                id: 'fin-print',
+                label: 'Mode Cetak Laporan A4',
+                description: 'Pratinjau dokumen cetak keuangan resmi',
+                format: 'print',
+                dividerBefore: true,
+                onSelect: onOpenPrintReport,
               },
             ]}
           />
-          <button
-            type="button"
-            onClick={onOpenPrintReport}
-            className="sm:order-2 inline-flex items-center justify-center gap-1.5 px-3.5 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-          >
-            <Printer className="w-3.5 h-3.5 text-sky-700" />
-            Cetak
-          </button>
         </div>
       </div>
 
@@ -545,7 +577,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
           <>
             {/* Mobile Card List */}
             <div className="md:hidden divide-y divide-slate-100">
-              {filtered.map((tx) => (
+              {visibleTransactions.map((tx) => (
                 <div key={tx.id} className="p-4 space-y-2">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -628,7 +660,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-sm">
-                  {filtered.map((tx) => (
+                  {visibleTransactions.map((tx) => (
                     <tr key={tx.id} className="hover:bg-slate-50/80 transition-colors">
                       <td className="py-3 px-4 font-mono-tabular text-xs text-slate-600 whitespace-nowrap">
                         {formatDateID(tx.transactionDate)}
@@ -705,6 +737,15 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                 </tbody>
               </table>
             </div>
+
+            <InfiniteScrollSentinel
+              sentinelRef={txSentinelRef}
+              visibleCount={visibleTxCount}
+              totalCount={totalTxCount}
+              hasMore={hasMoreTx}
+              onLoadMore={loadMoreTx}
+              itemLabel="transaksi"
+            />
           </>
         )}
       </div>

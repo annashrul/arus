@@ -57,8 +57,11 @@ import {
   buildPoolsSheet,
   downloadExcelWorkbook,
 } from '../lib/exportUtils';
+import { downloadClubSummaryPdf } from '../lib/pdfExport';
 import { ExportActionMenu } from './ExportActionMenu';
 import { BottomSheetSelect } from './BottomSheetSelect';
+import { InfiniteScrollSentinel } from './InfiniteScrollSentinel';
+import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
 import { CoachAnalyticsCharts } from './CoachAnalyticsCharts';
 import { useQueryParam } from '../lib/useQueryParams';
 import {
@@ -70,7 +73,6 @@ import {
   MapPin,
   Package,
   Plus,
-  Printer,
   Search,
   Trash2,
   Trophy,
@@ -295,6 +297,58 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
     const openReg = competitions.filter((c) => c.status === 'Pendaftaran Dibuka').length;
     return { total: competitions.length, upcoming, openReg };
   }, [competitions]);
+
+  const {
+    visibleItems: visibleCoaches,
+    visibleCount: visibleCoachCount,
+    totalCount: totalCoachCount,
+    hasMore: hasMoreCoaches,
+    loadMore: loadMoreCoaches,
+    sentinelRef: coachesSentinelRef,
+  } = useInfiniteScroll(filteredCoaches, {
+    initialCount: 20,
+    step: 20,
+    resetKey: `${activeTab}|${coachSearch}|${coachRoleFilter}|${coachStatusFilter}`,
+  });
+
+  const {
+    visibleItems: visiblePools,
+    visibleCount: visiblePoolCount,
+    totalCount: totalPoolCount,
+    hasMore: hasMorePools,
+    loadMore: loadMorePools,
+    sentinelRef: poolsSentinelRef,
+  } = useInfiniteScroll(filteredPools, {
+    initialCount: 16,
+    step: 16,
+    resetKey: `${activeTab}|${poolSearch}|${poolTypeFilter}|${poolStatusFilter}`,
+  });
+
+  const {
+    visibleItems: visibleEquipment,
+    visibleCount: visibleEqCount,
+    totalCount: totalEqCount,
+    hasMore: hasMoreEq,
+    loadMore: loadMoreEq,
+    sentinelRef: eqSentinelRef,
+  } = useInfiniteScroll(filteredEquipment, {
+    initialCount: 20,
+    step: 20,
+    resetKey: `${activeTab}|${eqSearch}|${eqCatFilter}|${eqCondFilter}`,
+  });
+
+  const {
+    visibleItems: visibleCompetitions,
+    visibleCount: visibleCompCount,
+    totalCount: totalCompCount,
+    hasMore: hasMoreComp,
+    loadMore: loadMoreComp,
+    sentinelRef: compSentinelRef,
+  } = useInfiniteScroll(filteredCompetitions, {
+    initialCount: 16,
+    step: 16,
+    resetKey: `${activeTab}|${compSearch}|${compLevelFilter}|${compStatusFilter}`,
+  });
 
   // =========================
   // HANDLERS: COACH CRUD
@@ -848,10 +902,26 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 shrink-0">
           <ExportActionMenu
-            label="Ekspor"
+            label="Ekspor & Cetak"
             options={[
+              {
+                id: 'ops-pdf',
+                label: 'Download PDF (.pdf)',
+                description: 'Rekap pelatih, fasilitas kolam, inventaris & lomba',
+                format: 'pdf',
+                onSelect: () =>
+                  downloadClubSummaryPdf({
+                    kind: 'clubops',
+                    club,
+                    coaches: filteredCoaches,
+                    pools: filteredPools,
+                    equipment: filteredEquipment,
+                    competitions: filteredCompetitions,
+                    periodLabel: 'Sesuai Filter Aktif',
+                  }),
+              },
               {
                 id: `${activeTab}-excel`,
                 label: 'Ekspor Excel (.xlsx)',
@@ -866,22 +936,24 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
                 format: 'csv',
                 onSelect: handleExportCSV,
               },
+              ...(onOpenPrint
+                ? [
+                    {
+                      id: 'ops-print',
+                      label: 'Mode Cetak Rekap A4',
+                      description: 'Pratinjau laporan operasional klub resmi',
+                      format: 'print' as const,
+                      dividerBefore: true,
+                      onSelect: onOpenPrint,
+                    },
+                  ]
+                : []),
             ]}
           />
-          {onOpenPrint && (
-            <button
-              type="button"
-              onClick={onOpenPrint}
-              className="inline-flex items-center justify-center gap-1.5 px-3 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 whitespace-nowrap cursor-pointer"
-            >
-              <Printer className="w-3.5 h-3.5 text-sky-700" />
-              Cetak Rekap
-            </button>
-          )}
           <button
             type="button"
             onClick={primaryAction}
-            className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 whitespace-nowrap cursor-pointer"
+            className="inline-flex items-center justify-center gap-2 px-4 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 whitespace-nowrap shrink-0 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             {primaryButtonLabel}
@@ -1002,7 +1074,7 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
             <>
               {/* Mobile Cards */}
               <div className="md:hidden space-y-3">
-                {filteredCoaches.map((c) => (
+                {visibleCoaches.map((c) => (
                   <div key={c.id} className="bg-white border border-slate-200 rounded-xl p-4 space-y-2.5">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
@@ -1075,7 +1147,7 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-xs">
-                    {filteredCoaches.map((c) => (
+                    {visibleCoaches.map((c) => (
                       <tr key={c.id} className="hover:bg-slate-50/70">
                         <td className="py-3 px-4">
                           <div className="font-semibold text-slate-900">{c.fullName}</div>
@@ -1140,6 +1212,17 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
                     ))}
                   </tbody>
                 </table>
+              </div>
+
+              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                <InfiniteScrollSentinel
+                  sentinelRef={coachesSentinelRef}
+                  visibleCount={visibleCoachCount}
+                  totalCount={totalCoachCount}
+                  hasMore={hasMoreCoaches}
+                  onLoadMore={loadMoreCoaches}
+                  itemLabel="pelatih"
+                />
               </div>
             </>
           )}
@@ -1229,8 +1312,9 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
               </p>
             </div>
           ) : (
+            <>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {filteredPools.map((p) => (
+              {visiblePools.map((p) => (
                 <div key={p.id} className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 flex flex-col justify-between gap-3">
                   <div className="space-y-1.5">
                     <div className="flex items-start justify-between gap-2">
@@ -1293,6 +1377,17 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
                 </div>
               ))}
             </div>
+            <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+              <InfiniteScrollSentinel
+                sentinelRef={poolsSentinelRef}
+                visibleCount={visiblePoolCount}
+                totalCount={totalPoolCount}
+                hasMore={hasMorePools}
+                onLoadMore={loadMorePools}
+                itemLabel="kolam"
+              />
+            </div>
+            </>
           )}
         </div>
       )}
@@ -1375,7 +1470,7 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
           ) : (
             <>
               <div className="md:hidden space-y-3">
-                {filteredEquipment.map((item) => (
+                {visibleEquipment.map((item) => (
                   <div key={item.id} className="bg-white border border-slate-200 rounded-xl p-4 space-y-2">
                     <div className="flex items-start justify-between gap-2">
                       <div>
@@ -1442,7 +1537,7 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-xs">
-                    {filteredEquipment.map((item) => (
+                    {visibleEquipment.map((item) => (
                       <tr key={item.id} className="hover:bg-slate-50/70">
                         <td className="py-3 px-4">
                           <div className="font-semibold text-slate-900">{item.itemName}</div>
@@ -1502,6 +1597,17 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
                     ))}
                   </tbody>
                 </table>
+              </div>
+
+              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                <InfiniteScrollSentinel
+                  sentinelRef={eqSentinelRef}
+                  visibleCount={visibleEqCount}
+                  totalCount={totalEqCount}
+                  hasMore={hasMoreEq}
+                  onLoadMore={loadMoreEq}
+                  itemLabel="inventaris"
+                />
               </div>
             </>
           )}
@@ -1580,8 +1686,9 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
               </p>
             </div>
           ) : (
+            <>
             <div className="space-y-3">
-              {filteredCompetitions.map((k) => (
+              {visibleCompetitions.map((k) => (
                 <div
                   key={k.id}
                   className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
@@ -1660,6 +1767,17 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
                 </div>
               ))}
             </div>
+            <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+              <InfiniteScrollSentinel
+                sentinelRef={compSentinelRef}
+                visibleCount={visibleCompCount}
+                totalCount={totalCompCount}
+                hasMore={hasMoreComp}
+                onLoadMore={loadMoreComp}
+                itemLabel="kejuaraan"
+              />
+            </div>
+            </>
           )}
         </div>
       )}
