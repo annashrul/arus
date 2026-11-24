@@ -798,22 +798,22 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
   const handleExportExcel = () => {
     if (activeTab === 'coaches') {
       downloadExcelWorkbook(
-        `pelatih-${club.name.toLowerCase().replace(/\s+/g, '-')}-${todayISO()}.xls`,
+        `pelatih-${club.name.toLowerCase().replace(/\s+/g, '-')}-${todayISO()}.xlsx`,
         [buildCoachesSheet(filteredCoaches)]
       );
     } else if (activeTab === 'pools') {
       downloadExcelWorkbook(
-        `kolam-${club.name.toLowerCase().replace(/\s+/g, '-')}-${todayISO()}.xls`,
+        `kolam-${club.name.toLowerCase().replace(/\s+/g, '-')}-${todayISO()}.xlsx`,
         [buildPoolsSheet(filteredPools)]
       );
     } else if (activeTab === 'equipment') {
       downloadExcelWorkbook(
-        `perlengkapan-${club.name.toLowerCase().replace(/\s+/g, '-')}-${todayISO()}.xls`,
+        `perlengkapan-${club.name.toLowerCase().replace(/\s+/g, '-')}-${todayISO()}.xlsx`,
         [buildEquipmentSheet(filteredEquipment)]
       );
     } else {
       downloadExcelWorkbook(
-        `kejuaraan-${club.name.toLowerCase().replace(/\s+/g, '-')}-${todayISO()}.xls`,
+        `kejuaraan-${club.name.toLowerCase().replace(/\s+/g, '-')}-${todayISO()}.xlsx`,
         [buildCompetitionsSheet(filteredCompetitions)]
       );
     }
@@ -854,7 +854,7 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
             options={[
               {
                 id: `${activeTab}-excel`,
-                label: 'Ekspor Excel (.xls)',
+                label: 'Ekspor Excel (.xlsx)',
                 description: 'Unduh data tab aktif dalam format spreadsheet',
                 format: 'excel',
                 onSelect: handleExportExcel,

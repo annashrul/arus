@@ -305,7 +305,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
             options={[
               {
                 id: 'full-excel',
-                label: 'Workbook Excel (.xls)',
+                label: 'Workbook Excel (.xlsx)',
                 description: 'Semua data klub (Kas, Atlet, Waktu, Jadwal, Presensi, Invoice, Pelatih & Klub)',
                 format: 'excel',
                 onSelect: () =>

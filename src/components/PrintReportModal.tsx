@@ -220,28 +220,28 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
         competitions,
       });
     } else if (reportKind === 'finance') {
-      downloadExcelWorkbook(`laporan-kas-${slug}-${today}.xls`, [
+      downloadExcelWorkbook(`laporan-kas-${slug}-${today}.xlsx`, [
         buildFinanceSheet(scopedTransactions),
       ]);
     } else if (reportKind === 'athletes') {
-      downloadExcelWorkbook(`laporan-atlet-waktu-${slug}-${today}.xls`, [
+      downloadExcelWorkbook(`laporan-atlet-waktu-${slug}-${today}.xlsx`, [
         buildAthletesSheet(sortedAthletes),
         buildSwimTimesSheet(scopedSwimTimes),
       ]);
     } else if (reportKind === 'schedules') {
-      downloadExcelWorkbook(`laporan-jadwal-presensi-${slug}-${today}.xls`, [
+      downloadExcelWorkbook(`laporan-jadwal-presensi-${slug}-${today}.xlsx`, [
         buildSchedulesSheet(sortedSchedules),
         buildAttendanceSheet(scopedAttendance),
       ]);
     } else if (reportKind === 'clubops') {
-      downloadExcelWorkbook(`laporan-pelatih-fasilitas-${slug}-${today}.xls`, [
+      downloadExcelWorkbook(`laporan-pelatih-fasilitas-${slug}-${today}.xlsx`, [
         buildCoachesSheet(coaches),
         buildPoolsSheet(pools),
         buildEquipmentSheet(equipment),
         buildCompetitionsSheet(competitions),
       ]);
     } else {
-      downloadExcelWorkbook(`laporan-tagihan-${slug}-${today}.xls`, [
+      downloadExcelWorkbook(`laporan-tagihan-${slug}-${today}.xlsx`, [
         buildInvoicesSheet(scopedInvoices),
       ]);
     }

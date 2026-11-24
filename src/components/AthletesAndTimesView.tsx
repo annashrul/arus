@@ -624,7 +624,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
 
   const handleExportAthletesExcel = () => {
     downloadExcelWorkbook(
-      `atlet-dan-waktu-${club.name.toLowerCase().replace(/\s+/g, '-')}.xls`,
+      `atlet-dan-waktu-${club.name.toLowerCase().replace(/\s+/g, '-')}.xlsx`,
       [buildAthletesSheet(filteredAthletes), buildSwimTimesSheet(filteredTimes)]
     );
   };
@@ -664,7 +664,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
             options={[
               {
                 id: 'ath-excel',
-                label: 'Ekspor Excel (.xls)',
+                label: 'Ekspor Excel (.xlsx)',
                 description: '2 sheet: Daftar Atlet & Catatan Waktu Kejuaraan',
                 format: 'excel',
                 onSelect: handleExportAthletesExcel,

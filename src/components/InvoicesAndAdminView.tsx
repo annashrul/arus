@@ -1465,7 +1465,7 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
 
   const handleExportInvoicesExcel = () => {
     downloadExcelWorkbook(
-      `rekap-invoice-${club.name.toLowerCase().replace(/\s+/g, '-')}.xls`,
+      `rekap-invoice-${club.name.toLowerCase().replace(/\s+/g, '-')}.xlsx`,
       [buildInvoicesSheet(filteredInvoices)]
     );
   };
@@ -1522,7 +1522,7 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
               options={[
                 {
                   id: 'inv-excel',
-                  label: 'Ekspor Excel (.xls)',
+                  label: 'Ekspor Excel (.xlsx)',
                   description: `${filteredInvoices.length} tagihan siap olah`,
                   format: 'excel',
                   onSelect: handleExportInvoicesExcel,

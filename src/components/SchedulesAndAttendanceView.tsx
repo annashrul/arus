@@ -485,7 +485,7 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
 
   const handleExportSchedulesExcel = () => {
     downloadExcelWorkbook(
-      `jadwal-dan-presensi-${club.name.toLowerCase().replace(/\s+/g, '-')}.xls`,
+      `jadwal-dan-presensi-${club.name.toLowerCase().replace(/\s+/g, '-')}.xlsx`,
       [buildSchedulesSheet(filteredSchedules), buildAttendanceSheet(attendance)]
     );
   };
@@ -510,7 +510,7 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
             options={[
               {
                 id: 'sch-excel',
-                label: 'Ekspor Excel (.xls)',
+                label: 'Ekspor Excel (.xlsx)',
                 description: '2 sheet: Matriks Jadwal & Log Presensi',
                 format: 'excel',
                 onSelect: handleExportSchedulesExcel,

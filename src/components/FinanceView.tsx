@@ -316,7 +316,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
 
   const handleExportExcel = () => {
     downloadExcelWorkbook(
-      `laporan-keuangan-${club.name.toLowerCase().replace(/\s+/g, '-')}.xls`,
+      `laporan-keuangan-${club.name.toLowerCase().replace(/\s+/g, '-')}.xlsx`,
       [buildFinanceSheet(filtered)]
     );
   };
@@ -357,7 +357,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
             options={[
               {
                 id: 'fin-excel',
-                label: 'Ekspor Excel (.xls)',
+                label: 'Ekspor Excel (.xlsx)',
                 description: `${filtered.length} transaksi terformat siap olah`,
                 format: 'excel',
                 onSelect: handleExportExcel,

@@ -541,19 +541,38 @@ export function currentMonthLabel(): string {
 export function downloadCSV(filename: string, headers: string[], rows: (string | number)[][]): void {
   const escape = (cell: string | number) => {
     const str = String(cell ?? '');
-    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+    if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
       return `"${str.replace(/"/g, '""')}"`;
     }
     return str;
   };
-  const csv = [headers.map(escape).join(','), ...rows.map((r) => r.map(escape).join(','))].join('\n');
+  const csv = [headers.map(escape).join(','), ...rows.map((r) => r.map(escape).join(','))].join('\r\n');
   const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const safeName =
+    filename
+      .trim()
+      .replace(/[\\/:*?"<>|]+/g, '-')
+      .replace(/\s+/g, '-') || 'ekspor.csv';
+  const navWithMsSave = navigator as Navigator & {
+    msSaveOrOpenBlob?: (b: Blob, defaultName?: string) => boolean;
+  };
+  if (typeof navWithMsSave.msSaveOrOpenBlob === 'function') {
+    navWithMsSave.msSaveOrOpenBlob(blob, safeName);
+    return;
+  }
+
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.setAttribute('download', filename);
+  link.download = safeName;
+  link.rel = 'noopener';
+  link.style.display = 'none';
   document.body.appendChild(link);
   link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  window.setTimeout(() => {
+    if (link.parentNode) {
+      link.parentNode.removeChild(link);
+    }
+    URL.revokeObjectURL(url);
+  }, 10000);
 }
