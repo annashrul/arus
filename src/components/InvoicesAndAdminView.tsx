@@ -25,7 +25,9 @@ import {
   Athlete,
   ClubAnnouncement,
   ClubInvoice,
+  ClubMember,
   ClubProfile,
+  Coach,
   currentMonthLabel,
   downloadCSV,
   formatDateID,
@@ -81,6 +83,8 @@ import {
   isValidPaymentTokenFormat,
 } from '../lib/paymentProof';
 import { useQueryParam } from '../lib/useQueryParams';
+import { RoleAccessManager } from './RoleAccessManager';
+import { normalizeEmail } from '../lib/roleAccess';
 import {
   buildSampleQrisPayload,
   decodeQrisFromImageFile,
@@ -95,6 +99,17 @@ interface InvoicesAndAdminViewProps {
   paymentRequests?: PaymentRequest[];
   athletes: Athlete[];
   announcements: ClubAnnouncement[];
+  clubMembers?: ClubMember[];
+  coaches?: Coach[];
+  onSyncAccess?: (overrideMembers?: ClubMember[]) => Promise<{
+    coachCount: number;
+    parentCount: number;
+    updatedDocs: number;
+  }>;
+  onPreviewRole?: (
+    role: 'coach' | 'parent',
+    opts?: { coachName?: string; athleteIds?: string[] }
+  ) => void;
   onOpenPrintReport: () => void;
 }
 
@@ -105,12 +120,16 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
   paymentRequests = [],
   athletes,
   announcements,
+  clubMembers = [],
+  coaches = [],
+  onSyncAccess,
+  onPreviewRole,
   onOpenPrintReport,
 }) => {
-  const [activeTab, setActiveTab] = useQueryParam<'invoices' | 'letters' | 'settings'>(
+  const [activeTab, setActiveTab] = useQueryParam<'invoices' | 'letters' | 'settings' | 'access'>(
     'inv_tab',
     'invoices',
-    { allowed: ['invoices', 'letters', 'settings'], history: 'push' }
+    { allowed: ['invoices', 'letters', 'settings', 'access'], history: 'push' }
   );
   const [listError, setListError] = useState<string | null>(null);
   const [confirmDeleteInvId, setConfirmDeleteInvId] = useState<string | null>(null);
@@ -403,6 +422,7 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
     invoiceId: string;
     invoiceNumber: string;
     athleteName: string;
+    parentEmail?: string;
     periodMonth: string;
     description: string;
     amount: number;
@@ -415,6 +435,7 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
     invoiceId: params.invoiceId,
     invoiceNumber: params.invoiceNumber,
     athleteName: params.athleteName,
+    parentEmail: normalizeEmail(params.parentEmail),
     periodMonth: params.periodMonth,
     description: params.description,
     amount: params.amount,
@@ -450,6 +471,8 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
       return existingReq.id;
     }
 
+    const ath = athletes.find((a) => a.id === inv.athleteId);
+    const resolvedParentEmail = normalizeEmail(inv.parentEmail || ath?.parentEmail);
     const token = isValidPaymentTokenFormat(inv.paymentToken)
       ? inv.paymentToken
       : generatePaymentToken();
@@ -460,6 +483,7 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
         invoiceId: inv.id,
         invoiceNumber: inv.invoiceNumber,
         athleteName: inv.athleteName,
+        parentEmail: resolvedParentEmail,
         periodMonth: inv.periodMonth,
         description: inv.description,
         amount: inv.amount,
@@ -564,6 +588,7 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
     const cleanAthleteName = clampString(ath.fullName, LIMITS.athlete.fullNameMax);
     const cleanParentName = clampString(ath.parentName || '', LIMITS.athlete.parentNameMax);
     const cleanParentPhone = clampString(ath.parentPhone || '', LIMITS.athlete.parentPhoneMax);
+    const cleanParentEmail = normalizeEmail(ath.parentEmail);
     const roundedAmount = Math.round(parsedAmount);
 
     setSavingInv(true);
@@ -579,6 +604,7 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
         athleteName: cleanAthleteName,
         parentName: cleanParentName,
         parentPhone: cleanParentPhone,
+        parentEmail: cleanParentEmail,
         periodMonth: cleanPeriod,
         category: invCategory,
         description: cleanDesc,
@@ -598,6 +624,7 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
           invoiceId: invRef.id,
           invoiceNumber,
           athleteName: cleanAthleteName,
+          parentEmail: cleanParentEmail,
           periodMonth: cleanPeriod,
           description: cleanDesc,
           amount: roundedAmount,
@@ -707,6 +734,7 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
           const cleanAthleteName = clampString(ath.fullName, LIMITS.athlete.fullNameMax);
           const cleanParentName = clampString(ath.parentName || '', LIMITS.athlete.parentNameMax);
           const cleanParentPhone = clampString(ath.parentPhone || '', LIMITS.athlete.parentPhoneMax);
+          const cleanParentEmail = normalizeEmail(ath.parentEmail);
           const description = `Iuran Latihan Reguler ${ath.ageGroup} — ${cleanPeriod}`;
           const roundedAmount = Math.round(ath.monthlyFee);
 
@@ -718,6 +746,7 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
             athleteName: cleanAthleteName,
             parentName: cleanParentName,
             parentPhone: cleanParentPhone,
+            parentEmail: cleanParentEmail,
             periodMonth: cleanPeriod,
             category: 'Iuran Bulanan (SPP)',
             description,
@@ -738,6 +767,7 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
               invoiceId: ref.id,
               invoiceNumber: invNumber,
               athleteName: cleanAthleteName,
+              parentEmail: cleanParentEmail,
               periodMonth: cleanPeriod,
               description,
               amount: roundedAmount,
@@ -1253,6 +1283,8 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
         targetGroup: cleanTarget,
         authorName: cleanAuthor,
         content: cleanContent,
+        coachEmails: club.coachEmails || [],
+        parentEmails: club.parentEmails || [],
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       }).catch((err) => handleFirestoreError(err, OperationType.CREATE, 'announcements'));
@@ -1741,6 +1773,20 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
           }`}
         >
           Profil & Rekening
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab('access');
+            setListError(null);
+          }}
+          className={`px-3.5 sm:px-4 min-h-[44px] sm:min-h-[36px] text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+            activeTab === 'access'
+              ? 'bg-white text-slate-900 shadow-sm'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          Akses Role ({clubMembers.length})
         </button>
       </div>
 
@@ -2847,6 +2893,18 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
             </button>
           </div>
         </form>
+      )}
+
+      {activeTab === 'access' && onSyncAccess && onPreviewRole && (
+        <RoleAccessManager
+          club={club}
+          userId={userId}
+          members={clubMembers}
+          coaches={coaches}
+          athletes={athletes}
+          onSyncAccess={onSyncAccess}
+          onPreviewRole={onPreviewRole}
+        />
       )}
 
       {/* Create Single Invoice Modal (Bottom sheet on mobile) */}

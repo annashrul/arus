@@ -109,6 +109,13 @@ export type CompetitionStatus =
   | 'Selesai'
   | 'Dibatalkan';
 
+export type UserRole = 'admin' | 'coach' | 'parent';
+export type ClubMemberRole = 'coach' | 'parent';
+export type ClubMemberStatus = 'Aktif' | 'Nonaktif';
+
+export const CLUB_MEMBER_ROLES: ClubMemberRole[] = ['coach', 'parent'];
+export const CLUB_MEMBER_STATUSES: ClubMemberStatus[] = ['Aktif', 'Nonaktif'];
+
 export interface ClubProfile {
   id: string;
   name: string;
@@ -123,7 +130,24 @@ export interface ClubProfile {
   qrisPayload?: string;
   qrisMerchantName?: string;
   defaultMonthlyFee: number;
+  coachEmails?: string[];
+  parentEmails?: string[];
   ownerId: string;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+export interface ClubMember {
+  id: string;
+  clubId: string;
+  ownerId: string;
+  memberEmail: string;
+  displayName: string;
+  role: ClubMemberRole;
+  coachName?: string;
+  linkedAthleteIds: string[];
+  status: ClubMemberStatus;
+  notes?: string;
   createdAt?: unknown;
   updatedAt?: unknown;
 }
@@ -139,7 +163,9 @@ export interface Athlete {
   status: AthleteStatus;
   parentName?: string;
   parentPhone?: string;
+  parentEmail?: string;
   coachName?: string;
+  coachEmails?: string[];
   monthlyFee: number;
   joinDate: string;
   notes?: string;
@@ -164,6 +190,8 @@ export interface SwimTime {
   location?: string;
   medal: MedalType;
   isPersonalBest: boolean;
+  parentEmail?: string;
+  coachEmails?: string[];
   notes?: string;
   createdAt?: unknown;
   updatedAt?: unknown;
@@ -202,6 +230,8 @@ export interface TrainingSchedule {
   laneInfo?: string;
   coachName: string;
   targetDistanceMeters: number;
+  coachEmails?: string[];
+  parentEmails?: string[];
   notes?: string;
   createdAt?: unknown;
   updatedAt?: unknown;
@@ -216,6 +246,7 @@ export interface ClubInvoice {
   athleteName: string;
   parentName?: string;
   parentPhone?: string;
+  parentEmail?: string;
   periodMonth: string;
   category: InvoiceCategory;
   description: string;
@@ -262,6 +293,7 @@ export interface PaymentRequest {
   submittedAt?: string;
   verifiedAt?: string;
   rejectionReason?: string;
+  parentEmail?: string;
   createdAt?: unknown;
   updatedAt?: unknown;
 }
@@ -276,6 +308,8 @@ export interface AttendanceRecord {
   athleteId: string;
   athleteName: string;
   status: AttendanceStatus;
+  parentEmail?: string;
+  coachEmails?: string[];
   notes?: string;
   createdAt?: unknown;
   updatedAt?: unknown;
@@ -291,6 +325,8 @@ export interface ClubAnnouncement {
   content: string;
   targetGroup?: string;
   authorName: string;
+  coachEmails?: string[];
+  parentEmails?: string[];
   createdAt?: unknown;
   updatedAt?: unknown;
 }
@@ -304,6 +340,7 @@ export interface Coach {
   licenseLevel: CoachLicense;
   specialization?: string;
   phone?: string;
+  email?: string;
   status: CoachStatus;
   monthlyHonorarium: number;
   joinDate: string;
@@ -322,6 +359,7 @@ export interface PoolFacility {
   address?: string;
   rentalCostPerSession: number;
   status: PoolStatus;
+  coachEmails?: string[];
   notes?: string;
   createdAt?: unknown;
   updatedAt?: unknown;
@@ -337,6 +375,7 @@ export interface EquipmentItem {
   condition: EquipmentCondition;
   location?: string;
   lastCheckedDate: string;
+  coachEmails?: string[];
   notes?: string;
   createdAt?: unknown;
   updatedAt?: unknown;
@@ -354,6 +393,8 @@ export interface ClubCompetition {
   poolCourse: PoolCourse;
   registrationFee: number;
   status: CompetitionStatus;
+  coachEmails?: string[];
+  parentEmails?: string[];
   notes?: string;
   createdAt?: unknown;
   updatedAt?: unknown;

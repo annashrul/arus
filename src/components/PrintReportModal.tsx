@@ -15,6 +15,7 @@ import {
   SwimTime,
   todayISO,
   TrainingSchedule,
+  UserRole,
 } from '../types/club';
 import {
   buildAthletesSheet,
@@ -60,6 +61,7 @@ interface PrintReportModalProps {
   pools?: PoolFacility[];
   equipment?: EquipmentItem[];
   competitions?: ClubCompetition[];
+  userRole?: UserRole;
 }
 
 function getScopeStartDate(scope: PeriodScope, today: string): string | null {
@@ -89,8 +91,17 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
   pools = [],
   equipment = [],
   competitions = [],
+  userRole = 'admin',
 }) => {
-  const [reportKind, setReportKind] = useState<PrintReportKind>(initialReport);
+  const isCoach = userRole === 'coach';
+  const normalizeReportKind = (candidate: PrintReportKind): PrintReportKind =>
+    isCoach && (candidate === 'executive' || candidate === 'finance' || candidate === 'invoices')
+      ? 'athletes'
+      : candidate;
+
+  const [reportKind, setReportKind] = useState<PrintReportKind>(() =>
+    normalizeReportKind(initialReport)
+  );
   const [periodScope, setPeriodScope] = useState<PeriodScope>('all');
   const [includeKop, setIncludeKop] = useState(true);
   const [includeSignature, setIncludeSignature] = useState(true);
@@ -98,9 +109,16 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
 
   React.useEffect(() => {
     if (open) {
-      setReportKind(initialReport);
+      setReportKind(
+        isCoach &&
+          (initialReport === 'executive' ||
+            initialReport === 'finance' ||
+            initialReport === 'invoices')
+          ? 'athletes'
+          : initialReport
+      );
     }
-  }, [open, initialReport]);
+  }, [open, initialReport, isCoach]);
 
   const today = todayISO();
   const scopeStart = useMemo(() => getScopeStartDate(periodScope, today), [periodScope, today]);
@@ -208,7 +226,7 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
 
   const handleExportReportExcel = () => {
     const slug = club.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-    if (reportKind === 'executive') {
+    if (reportKind === 'executive' && !isCoach) {
       downloadFullClubExcel(club, {
         athletes: sortedAthletes,
         swimTimes: scopedSwimTimes,
@@ -221,13 +239,13 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
         equipment,
         competitions,
       });
-    } else if (reportKind === 'finance') {
+    } else if (reportKind === 'finance' && !isCoach) {
       downloadExcelWorkbook(`laporan-kas-${slug}-${today}.xlsx`, [
         buildFinanceSheet(scopedTransactions),
       ]);
     } else if (reportKind === 'athletes') {
       downloadExcelWorkbook(`laporan-atlet-waktu-${slug}-${today}.xlsx`, [
-        buildAthletesSheet(sortedAthletes),
+        buildAthletesSheet(sortedAthletes, { hideFinancial: isCoach }),
         buildSwimTimesSheet(scopedSwimTimes),
       ]);
     } else if (reportKind === 'schedules') {
@@ -236,13 +254,14 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
         buildAttendanceSheet(scopedAttendance),
       ]);
     } else if (reportKind === 'clubops') {
-      downloadExcelWorkbook(`laporan-pelatih-fasilitas-${slug}-${today}.xlsx`, [
-        buildCoachesSheet(coaches),
-        buildPoolsSheet(pools),
+      const clubOpsSheets = [
+        ...(!isCoach ? [buildCoachesSheet(coaches)] : []),
+        buildPoolsSheet(pools, { hideFinancial: isCoach }),
         buildEquipmentSheet(equipment),
-        buildCompetitionsSheet(competitions),
-      ]);
-    } else {
+        buildCompetitionsSheet(competitions, { hideFinancial: isCoach }),
+      ];
+      downloadExcelWorkbook(`laporan-operasional-${slug}-${today}.xlsx`, clubOpsSheets);
+    } else if (!isCoach) {
       downloadExcelWorkbook(`laporan-tagihan-${slug}-${today}.xlsx`, [
         buildInvoicesSheet(scopedInvoices),
       ]);
@@ -259,14 +278,15 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
       includeSignature,
       athletes: sortedAthletes,
       swimTimes: scopedSwimTimes,
-      transactions: scopedTransactions,
+      transactions: isCoach ? [] : scopedTransactions,
       schedules: sortedSchedules,
       attendance: scopedAttendance,
-      invoices: scopedInvoices,
-      coaches,
+      invoices: isCoach ? [] : scopedInvoices,
+      coaches: isCoach ? [] : coaches,
       pools,
       equipment,
       competitions,
+      hideFinancial: isCoach,
     });
   };
 
@@ -331,14 +351,20 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5 pt-2 border-t border-slate-100">
             <div className="flex items-center gap-1 overflow-x-auto no-scrollbar pb-0.5">
               {(
-                [
-                  { id: 'executive', label: 'Eksekutif' },
-                  { id: 'finance', label: 'Keuangan Kas' },
-                  { id: 'athletes', label: 'Atlet & Waktu' },
-                  { id: 'schedules', label: 'Jadwal & Presensi' },
-                  { id: 'invoices', label: 'Tagihan SPP' },
-                  { id: 'clubops', label: 'Pelatih & Klub' },
-                ] as const
+                isCoach
+                  ? ([
+                      { id: 'athletes', label: 'Atlet & Waktu' },
+                      { id: 'schedules', label: 'Jadwal & Presensi' },
+                      { id: 'clubops', label: 'Fasilitas & Lomba' },
+                    ] as const)
+                  : ([
+                      { id: 'executive', label: 'Eksekutif' },
+                      { id: 'finance', label: 'Keuangan Kas' },
+                      { id: 'athletes', label: 'Atlet & Waktu' },
+                      { id: 'schedules', label: 'Jadwal & Presensi' },
+                      { id: 'invoices', label: 'Tagihan SPP' },
+                      { id: 'clubops', label: 'Pelatih & Klub' },
+                    ] as const)
               ).map((tab) => (
                 <button
                   key={tab.id}
@@ -646,7 +672,7 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
                         <th className="py-2 px-2.5">KU / Gender</th>
                         <th className="py-2 px-2.5">Pelatih</th>
                         <th className="py-2 px-2.5">Wali & Kontak</th>
-                        <th className="py-2 px-2.5 text-right">SPP</th>
+                        {!isCoach && <th className="py-2 px-2.5 text-right">SPP</th>}
                         <th className="py-2 px-2.5">Status</th>
                       </tr>
                     </thead>
@@ -661,9 +687,11 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
                           <td className="py-2 px-2.5 font-mono-tabular">
                             {ath.parentName || '-'} ({ath.parentPhone || '-'})
                           </td>
-                          <td className="py-2 px-2.5 text-right font-mono-tabular">
-                            {formatRupiah(ath.monthlyFee)}
-                          </td>
+                          {!isCoach && (
+                            <td className="py-2 px-2.5 text-right font-mono-tabular">
+                              {formatRupiah(ath.monthlyFee)}
+                            </td>
+                          )}
                           <td className="py-2 px-2.5">{ath.status}</td>
                         </tr>
                       ))}
@@ -889,13 +917,15 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
           {/* REPORT SECTION: CLUBOPS */}
           {reportKind === 'clubops' && (
             <div className="space-y-6">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="border border-slate-200 rounded-lg p-3">
-                  <div className="text-[11px] text-slate-500">Pelatih Aktif</div>
-                  <div className="font-mono-tabular text-sm sm:text-base font-bold text-slate-900 mt-1">
-                    {coaches.filter((c) => c.status === 'Aktif').length} / {coaches.length}
+              <div className={`grid grid-cols-2 ${isCoach ? 'sm:grid-cols-3' : 'sm:grid-cols-4'} gap-3`}>
+                {!isCoach && (
+                  <div className="border border-slate-200 rounded-lg p-3">
+                    <div className="text-[11px] text-slate-500">Pelatih Aktif</div>
+                    <div className="font-mono-tabular text-sm sm:text-base font-bold text-slate-900 mt-1">
+                      {coaches.filter((c) => c.status === 'Aktif').length} / {coaches.length}
+                    </div>
                   </div>
-                </div>
+                )}
                 <div className="border border-slate-200 rounded-lg p-3">
                   <div className="text-[11px] text-slate-500">Fasilitas Kolam</div>
                   <div className="font-mono-tabular text-sm sm:text-base font-bold text-slate-900 mt-1">
@@ -916,33 +946,35 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
                 </div>
               </div>
 
-              <div>
-                <h3 className="font-display text-sm font-bold text-slate-900 mb-2">
-                  Daftar Pelatih & Staf ({coaches.length})
-                </h3>
-                <table className="w-full text-left border-collapse text-xs border border-slate-200">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-600">
-                      <th className="py-2 px-2.5">Nama</th>
-                      <th className="py-2 px-2.5">Peran & Lisensi</th>
-                      <th className="py-2 px-2.5">Status</th>
-                      <th className="py-2 px-2.5 text-right">Honorarium/Bln</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {coaches.map((c) => (
-                      <tr key={c.id}>
-                        <td className="py-2 px-2.5 font-medium text-slate-900">{c.fullName}</td>
-                        <td className="py-2 px-2.5">{c.role} · {c.licenseLevel}</td>
-                        <td className="py-2 px-2.5">{c.status}</td>
-                        <td className="py-2 px-2.5 text-right font-mono-tabular">
-                          {formatRupiah(c.monthlyHonorarium)}
-                        </td>
+              {!isCoach && (
+                <div>
+                  <h3 className="font-display text-sm font-bold text-slate-900 mb-2">
+                    Daftar Pelatih & Staf ({coaches.length})
+                  </h3>
+                  <table className="w-full text-left border-collapse text-xs border border-slate-200">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200 text-slate-600">
+                        <th className="py-2 px-2.5">Nama</th>
+                        <th className="py-2 px-2.5">Peran & Lisensi</th>
+                        <th className="py-2 px-2.5">Status</th>
+                        <th className="py-2 px-2.5 text-right">Honorarium/Bln</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {coaches.map((c) => (
+                        <tr key={c.id}>
+                          <td className="py-2 px-2.5 font-medium text-slate-900">{c.fullName}</td>
+                          <td className="py-2 px-2.5">{c.role} · {c.licenseLevel}</td>
+                          <td className="py-2 px-2.5">{c.status}</td>
+                          <td className="py-2 px-2.5 text-right font-mono-tabular">
+                            {formatRupiah(c.monthlyHonorarium)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
 
               <div>
                 <h3 className="font-display text-sm font-bold text-slate-900 mb-2">

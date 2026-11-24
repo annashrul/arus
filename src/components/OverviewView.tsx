@@ -18,6 +18,7 @@ import {
   SwimTime,
   todayISO,
   TrainingSchedule,
+  UserRole,
 } from '../types/club';
 import {
   downloadFullClubExcel,
@@ -26,6 +27,7 @@ import {
 } from '../lib/exportUtils';
 import { downloadClubSummaryPdf } from '../lib/pdfExport';
 import { ClubReminder } from '../lib/reminders';
+import { computeConsecutiveAbsences } from '../lib/attendanceAlerts';
 import { ExportActionMenu } from './ExportActionMenu';
 import { PrintReportKind } from './PrintReportModal';
 import {
@@ -75,6 +77,8 @@ interface OverviewViewProps {
   onOpenVerificationQueue?: () => void;
   onLoadSampleData?: () => Promise<void>;
   seedingSample?: boolean;
+  userRole?: UserRole;
+  coachDisplayName?: string;
 }
 
 export const OverviewView: React.FC<OverviewViewProps> = ({
@@ -98,7 +102,10 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
   onOpenVerificationQueue,
   onLoadSampleData,
   seedingSample,
+  userRole = 'admin',
+  coachDisplayName,
 }) => {
+  const isCoach = userRole === 'coach';
   const [todayDate, setTodayDate] = useState<string>(() => todayISO());
 
   useEffect(() => {
@@ -331,6 +338,31 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
 
   const upcomingSchedules = useMemo(() => schedules.slice(0, 5), [schedules]);
 
+  const coachMetrics = useMemo(() => {
+    let hadir = 0;
+    for (const rec of attendance) {
+      if (rec.status === 'Hadir') hadir++;
+    }
+    const attendanceRatePct =
+      attendance.length > 0 ? Math.round((hadir / attendance.length) * 100) : 0;
+    const { alerts: consecutiveAbsenceAlerts } = computeConsecutiveAbsences(
+      athletes,
+      attendance,
+      club,
+      3
+    );
+    const upcomingCompetitions = [...competitions]
+      .filter((c) => c.status !== 'Selesai')
+      .sort((a, b) => a.startDate.localeCompare(b.startDate));
+    return {
+      hadir,
+      totalAttendance: attendance.length,
+      attendanceRatePct,
+      consecutiveAbsenceAlerts,
+      upcomingCompetitions,
+    };
+  }, [attendance, athletes, club, competitions]);
+
   const isEmptyClub =
     athletes.length === 0 &&
     transactions.length === 0 &&
@@ -343,104 +375,183 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="font-display text-lg sm:text-xl font-bold text-slate-900">
-            Ringkasan {club.name}
+            {isCoach
+              ? `Dashboard Pelatih · ${coachDisplayName || club.headCoach}`
+              : `Ringkasan ${club.name}`}
           </h1>
           <p className="text-xs sm:text-sm text-slate-500">
-            Pantau kas klub, prestasi atlet, jadwal latihan, dan pengingat tagihan dalam satu layar.
+            {isCoach
+              ? `Pantau atlet binaan, presensi latihan, catatan waktu kejuaraan, dan jadwal ${club.name}.`
+              : 'Pantau kas klub, prestasi atlet, jadwal latihan, dan pengingat tagihan dalam satu layar.'}
           </p>
         </div>
 
         <div className="w-full sm:w-auto shrink-0">
           <ExportActionMenu
             label="Ekspor & Cetak"
-            options={[
-              {
-                id: 'full-pdf',
-                label: 'Download PDF (.pdf)',
-                description: 'Ringkasan eksekutif klub siap bagikan atau arsip',
-                format: 'pdf',
-                disabled: isEmptyClub,
-                onSelect: () =>
-                  downloadClubSummaryPdf({
-                    kind: 'executive',
-                    club,
-                    athletes,
-                    swimTimes,
-                    transactions,
-                    schedules,
-                    attendance,
-                    invoices,
-                    coaches,
-                    pools,
-                    equipment,
-                    competitions,
-                    periodLabel: 'Seluruh Periode',
-                  }),
-              },
-              {
-                id: 'full-excel',
-                label: 'Workbook Excel (.xlsx)',
-                description: 'Semua data klub (Kas, Atlet, Waktu, Jadwal, Presensi, Invoice, Pelatih & Klub)',
-                format: 'excel',
-                disabled: isEmptyClub,
-                onSelect: () =>
-                  downloadFullClubExcel(club, {
-                    athletes,
-                    swimTimes,
-                    transactions,
-                    schedules,
-                    attendance,
-                    invoices,
-                    coaches,
-                    pools,
-                    equipment,
-                    competitions,
-                  }),
-              },
-              {
-                id: 'schedules-ics',
-                label: 'Kalender Latihan (.ics)',
-                description: 'Impor jadwal latihan ke Google / Apple Calendar',
-                format: 'ics',
-                disabled: schedules.length === 0,
-                onSelect: () => downloadSchedulesICS(club, schedules),
-              },
-              {
-                id: 'full-json',
-                label: 'Backup Lengkap (.json)',
-                description: 'Arsip seluruh data klub termasuk pelatih, kolam & administrasi',
-                format: 'json',
-                disabled: isEmptyClub,
-                onSelect: () =>
-                  downloadJSONBackup(club, {
-                    athletes,
-                    swimTimes,
-                    transactions,
-                    schedules,
-                    attendance,
-                    invoices,
-                    announcements,
-                    coaches,
-                    pools,
-                    equipment,
-                    competitions,
-                  }),
-              },
-              {
-                id: 'print-executive',
-                label: 'Mode Cetak Laporan A4',
-                description: 'Pratinjau laporan resmi dengan kop surat & tanda tangan',
-                format: 'print',
-                dividerBefore: true,
-                onSelect: () => onOpenPrintReport('executive'),
-              },
-            ]}
+            options={
+              isCoach
+                ? [
+                    {
+                      id: 'coach-ath-pdf',
+                      label: 'Download PDF Atlet & Waktu (.pdf)',
+                      description: 'Rekap profil atlet & catatan waktu (tanpa data keuangan)',
+                      format: 'pdf',
+                      disabled: athletes.length === 0 && swimTimes.length === 0,
+                      onSelect: () =>
+                        downloadClubSummaryPdf({
+                          kind: 'athletes',
+                          club,
+                          athletes,
+                          swimTimes,
+                          periodLabel: 'Seluruh Periode',
+                          hideFinancial: true,
+                        }),
+                    },
+                    {
+                      id: 'coach-sch-pdf',
+                      label: 'Download PDF Jadwal & Presensi (.pdf)',
+                      description: 'Rekap jadwal sesi latihan & kehadiran atlet',
+                      format: 'pdf',
+                      disabled: schedules.length === 0 && attendance.length === 0,
+                      onSelect: () =>
+                        downloadClubSummaryPdf({
+                          kind: 'schedules',
+                          club,
+                          athletes,
+                          schedules,
+                          attendance,
+                          periodLabel: 'Seluruh Periode',
+                          hideFinancial: true,
+                        }),
+                    },
+                    {
+                      id: 'coach-excel',
+                      label: 'Workbook Excel Pelatih (.xlsx)',
+                      description: 'Atlet, Waktu, Jadwal, Presensi, Kolam, Alat & Kejuaraan',
+                      format: 'excel',
+                      disabled: athletes.length === 0 && schedules.length === 0,
+                      onSelect: () =>
+                        downloadFullClubExcel(club, {
+                          athletes,
+                          swimTimes,
+                          transactions: [],
+                          schedules,
+                          attendance,
+                          invoices: [],
+                          coaches: [],
+                          pools,
+                          equipment,
+                          competitions,
+                          hideFinancial: true,
+                        }),
+                    },
+                    {
+                      id: 'schedules-ics',
+                      label: 'Kalender Latihan (.ics)',
+                      description: 'Impor jadwal latihan ke Google / Apple Calendar',
+                      format: 'ics',
+                      disabled: schedules.length === 0,
+                      onSelect: () => downloadSchedulesICS(club, schedules),
+                    },
+                    {
+                      id: 'print-coach',
+                      label: 'Mode Cetak Laporan A4',
+                      description: 'Pratinjau dokumen atlet, jadwal & operasional pelatih',
+                      format: 'print',
+                      dividerBefore: true,
+                      onSelect: () => onOpenPrintReport('athletes'),
+                    },
+                  ]
+                : [
+                    {
+                      id: 'full-pdf',
+                      label: 'Download PDF (.pdf)',
+                      description: 'Ringkasan eksekutif klub siap bagikan atau arsip',
+                      format: 'pdf',
+                      disabled: isEmptyClub,
+                      onSelect: () =>
+                        downloadClubSummaryPdf({
+                          kind: 'executive',
+                          club,
+                          athletes,
+                          swimTimes,
+                          transactions,
+                          schedules,
+                          attendance,
+                          invoices,
+                          coaches,
+                          pools,
+                          equipment,
+                          competitions,
+                          periodLabel: 'Seluruh Periode',
+                        }),
+                    },
+                    {
+                      id: 'full-excel',
+                      label: 'Workbook Excel (.xlsx)',
+                      description: 'Semua data klub (Kas, Atlet, Waktu, Jadwal, Presensi, Invoice, Pelatih & Klub)',
+                      format: 'excel',
+                      disabled: isEmptyClub,
+                      onSelect: () =>
+                        downloadFullClubExcel(club, {
+                          athletes,
+                          swimTimes,
+                          transactions,
+                          schedules,
+                          attendance,
+                          invoices,
+                          coaches,
+                          pools,
+                          equipment,
+                          competitions,
+                        }),
+                    },
+                    {
+                      id: 'schedules-ics',
+                      label: 'Kalender Latihan (.ics)',
+                      description: 'Impor jadwal latihan ke Google / Apple Calendar',
+                      format: 'ics',
+                      disabled: schedules.length === 0,
+                      onSelect: () => downloadSchedulesICS(club, schedules),
+                    },
+                    {
+                      id: 'full-json',
+                      label: 'Backup Lengkap (.json)',
+                      description: 'Arsip seluruh data klub termasuk pelatih, kolam & administrasi',
+                      format: 'json',
+                      disabled: isEmptyClub,
+                      onSelect: () =>
+                        downloadJSONBackup(club, {
+                          athletes,
+                          swimTimes,
+                          transactions,
+                          schedules,
+                          attendance,
+                          invoices,
+                          announcements,
+                          coaches,
+                          pools,
+                          equipment,
+                          competitions,
+                        }),
+                    },
+                    {
+                      id: 'print-executive',
+                      label: 'Mode Cetak Laporan A4',
+                      description: 'Pratinjau laporan resmi dengan kop surat & tanda tangan',
+                      format: 'print',
+                      dividerBefore: true,
+                      onSelect: () => onOpenPrintReport('executive'),
+                    },
+                  ]
+            }
           />
         </div>
       </div>
 
       {/* Header Banner / Quick Empty Prompt */}
-      {isEmptyClub && onLoadSampleData && (
+      {!isCoach && isEmptyClub && onLoadSampleData && (
         <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="space-y-1">
             <h2 className="font-display text-base sm:text-lg font-semibold text-slate-900">
@@ -461,7 +572,8 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
         </div>
       )}
 
-      {/* Real-Time Today's Cashflow Visual */}
+      {/* Real-Time Today's Cashflow Visual (Admin Only) */}
+      {!isCoach && (
       <section
         aria-label="Arus Kas Real-Time Hari Ini"
         className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 space-y-4"
@@ -634,6 +746,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           )}
         </div>
       </section>
+      )}
 
       {/* Executive Login Brief: Active Athletes & Current Month Billing Status */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5">
@@ -728,125 +841,204 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           </div>
         </div>
 
-        {/* Card 2: Current Month Billing Status Brief */}
-        <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 flex flex-col justify-between gap-4">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h2 className="font-display text-sm sm:text-base font-semibold text-slate-900">
-                Status Tagihan {currentMonth}
-              </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                {currentMonthBilling.totalCount === 0
-                  ? `Belum ada invoice diterbitkan untuk periode ${currentMonth}`
-                  : `${currentMonthBilling.totalCount} tagihan bulan berjalan · Total ${formatRupiah(currentMonthBilling.totalAmount)}`}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => onNavigate('invoices')}
-              className="text-xs font-medium text-sky-700 hover:text-sky-800 inline-flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              Buka Tagihan <ArrowUpRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
-          <div className="space-y-2.5">
-            <div className="flex items-baseline justify-between gap-2">
-              <div className="font-mono-tabular text-2xl sm:text-3xl font-bold text-slate-900">
-                {currentMonthBilling.collectionRatePct}%{' '}
-                <span className="text-xs sm:text-sm font-normal text-slate-500">terbayar</span>
+        {/* Card 2: Current Month Billing Status Brief (Admin) or Attendance & Competition Readiness (Coach) */}
+        {!isCoach ? (
+          <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 flex flex-col justify-between gap-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="font-display text-sm sm:text-base font-semibold text-slate-900">
+                  Status Tagihan {currentMonth}
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {currentMonthBilling.totalCount === 0
+                    ? `Belum ada invoice diterbitkan untuk periode ${currentMonth}`
+                    : `${currentMonthBilling.totalCount} tagihan bulan berjalan · Total ${formatRupiah(currentMonthBilling.totalAmount)}`}
+                </p>
               </div>
-              <div className="text-xs font-mono-tabular text-emerald-700 font-semibold">
-                {formatRupiah(currentMonthBilling.paidAmount)} lunas
-              </div>
-            </div>
-
-            {currentMonthBilling.totalAmount > 0 && (
-              <div
-                className="h-2 w-full bg-slate-100 rounded-full overflow-hidden flex"
-                aria-label="Proporsi pelunasan tagihan bulan berjalan"
-              >
-                {currentMonthBilling.paidAmount > 0 && (
-                  <div
-                    className="h-full bg-emerald-600"
-                    style={{
-                      width: `${(currentMonthBilling.paidAmount / currentMonthBilling.totalAmount) * 100}%`,
-                    }}
-                  />
-                )}
-                {currentMonthBilling.pendingAmount > 0 && (
-                  <div
-                    className="h-full bg-amber-500"
-                    style={{
-                      width: `${(currentMonthBilling.pendingAmount / currentMonthBilling.totalAmount) * 100}%`,
-                    }}
-                  />
-                )}
-                {currentMonthBilling.overdueAmount > 0 && (
-                  <div
-                    className="h-full bg-red-600"
-                    style={{
-                      width: `${(currentMonthBilling.overdueAmount / currentMonthBilling.totalAmount) * 100}%`,
-                    }}
-                  />
-                )}
-              </div>
-            )}
-          </div>
-
-          <div className="pt-3 border-t border-slate-100 space-y-2">
-            <div className="grid grid-cols-3 divide-x divide-slate-200 text-xs">
-              <div className="pr-2 min-w-0">
-                <span className="text-slate-500 block">Lunas ({currentMonthBilling.paidCount})</span>
-                <span className="font-mono-tabular font-semibold text-emerald-700 truncate block">
-                  {formatRupiah(currentMonthBilling.paidAmount)}
-                </span>
-              </div>
-              <div className="px-3 min-w-0">
-                <span className="text-slate-500 block">
-                  Menunggu ({currentMonthBilling.pendingCount})
-                </span>
-                <span className="font-mono-tabular font-semibold text-amber-700 truncate block">
-                  {formatRupiah(currentMonthBilling.pendingAmount)}
-                </span>
-              </div>
-              <div className="pl-3 min-w-0">
-                <span className="text-slate-500 block">
-                  Jatuh Tempo ({currentMonthBilling.overdueCount})
-                </span>
-                <span className="font-mono-tabular font-semibold text-red-600 truncate block">
-                  {formatRupiah(currentMonthBilling.overdueAmount)}
-                </span>
-              </div>
-            </div>
-            {pendingVerificationSummary.count > 0 ? (
               <button
                 type="button"
-                onClick={() =>
-                  onOpenVerificationQueue ? onOpenVerificationQueue() : onNavigate('invoices')
-                }
-                className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-sky-50 border border-sky-200 text-xs text-sky-900 hover:bg-sky-100/80 transition-colors cursor-pointer text-left"
+                onClick={() => onNavigate('invoices')}
+                className="text-xs font-medium text-sky-700 hover:text-sky-800 inline-flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
               >
-                <span className="font-medium truncate">
-                  {pendingVerificationSummary.count} bukti bayar masuk ({formatRupiah(pendingVerificationSummary.amount)}) siap dikonfirmasi
-                </span>
-                <span className="font-semibold text-sky-800 whitespace-nowrap shrink-0 inline-flex items-center gap-0.5">
-                  Periksa <ArrowUpRight className="w-3.5 h-3.5" />
-                </span>
+                Buka Tagihan <ArrowUpRight className="w-3.5 h-3.5" />
               </button>
-            ) : (
-              <p className="text-[11px] text-slate-500 truncate">
-                {currentMonthBilling.activeWithoutSppCount > 0
-                  ? `${currentMonthBilling.activeWithoutSppCount} atlet aktif belum diterbitkan SPP ${currentMonth}.`
-                  : currentMonthBilling.totalCount === 0
-                  ? `Gunakan Generator SPP Massal di Invoice & Adm untuk menerbitkan tagihan ${currentMonth}.`
-                  : currentMonthBilling.overdueCount + currentMonthBilling.pendingCount === 0
-                  ? `Seluruh tagihan periode ${currentMonth} telah lunas.`
-                  : `${currentMonthBilling.pendingCount + currentMonthBilling.overdueCount} tagihan bulan ${currentMonth} menunggu pelunasan.`}
-              </p>
-            )}
+            </div>
+
+            <div className="space-y-2.5">
+              <div className="flex items-baseline justify-between gap-2">
+                <div className="font-mono-tabular text-2xl sm:text-3xl font-bold text-slate-900">
+                  {currentMonthBilling.collectionRatePct}%{' '}
+                  <span className="text-xs sm:text-sm font-normal text-slate-500">terbayar</span>
+                </div>
+                <div className="text-xs font-mono-tabular text-emerald-700 font-semibold">
+                  {formatRupiah(currentMonthBilling.paidAmount)} lunas
+                </div>
+              </div>
+
+              {currentMonthBilling.totalAmount > 0 && (
+                <div
+                  className="h-2 w-full bg-slate-100 rounded-full overflow-hidden flex"
+                  aria-label="Proporsi pelunasan tagihan bulan berjalan"
+                >
+                  {currentMonthBilling.paidAmount > 0 && (
+                    <div
+                      className="h-full bg-emerald-600"
+                      style={{
+                        width: `${(currentMonthBilling.paidAmount / currentMonthBilling.totalAmount) * 100}%`,
+                      }}
+                    />
+                  )}
+                  {currentMonthBilling.pendingAmount > 0 && (
+                    <div
+                      className="h-full bg-amber-500"
+                      style={{
+                        width: `${(currentMonthBilling.pendingAmount / currentMonthBilling.totalAmount) * 100}%`,
+                      }}
+                    />
+                  )}
+                  {currentMonthBilling.overdueAmount > 0 && (
+                    <div
+                      className="h-full bg-red-600"
+                      style={{
+                        width: `${(currentMonthBilling.overdueAmount / currentMonthBilling.totalAmount) * 100}%`,
+                      }}
+                    />
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="pt-3 border-t border-slate-100 space-y-2">
+              <div className="grid grid-cols-3 divide-x divide-slate-200 text-xs">
+                <div className="pr-2 min-w-0">
+                  <span className="text-slate-500 block">Lunas ({currentMonthBilling.paidCount})</span>
+                  <span className="font-mono-tabular font-semibold text-emerald-700 truncate block">
+                    {formatRupiah(currentMonthBilling.paidAmount)}
+                  </span>
+                </div>
+                <div className="px-3 min-w-0">
+                  <span className="text-slate-500 block">
+                    Menunggu ({currentMonthBilling.pendingCount})
+                  </span>
+                  <span className="font-mono-tabular font-semibold text-amber-700 truncate block">
+                    {formatRupiah(currentMonthBilling.pendingAmount)}
+                  </span>
+                </div>
+                <div className="pl-3 min-w-0">
+                  <span className="text-slate-500 block">
+                    Jatuh Tempo ({currentMonthBilling.overdueCount})
+                  </span>
+                  <span className="font-mono-tabular font-semibold text-red-600 truncate block">
+                    {formatRupiah(currentMonthBilling.overdueAmount)}
+                  </span>
+                </div>
+              </div>
+              {pendingVerificationSummary.count > 0 ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    onOpenVerificationQueue ? onOpenVerificationQueue() : onNavigate('invoices')
+                  }
+                  className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-sky-50 border border-sky-200 text-xs text-sky-900 hover:bg-sky-100/80 transition-colors cursor-pointer text-left"
+                >
+                  <span className="font-medium truncate">
+                    {pendingVerificationSummary.count} bukti bayar masuk ({formatRupiah(pendingVerificationSummary.amount)}) siap dikonfirmasi
+                  </span>
+                  <span className="font-semibold text-sky-800 whitespace-nowrap shrink-0 inline-flex items-center gap-0.5">
+                    Periksa <ArrowUpRight className="w-3.5 h-3.5" />
+                  </span>
+                </button>
+              ) : (
+                <p className="text-[11px] text-slate-500 truncate">
+                  {currentMonthBilling.activeWithoutSppCount > 0
+                    ? `${currentMonthBilling.activeWithoutSppCount} atlet aktif belum diterbitkan SPP ${currentMonth}.`
+                    : currentMonthBilling.totalCount === 0
+                    ? `Gunakan Generator SPP Massal di Invoice & Adm untuk menerbitkan tagihan ${currentMonth}.`
+                    : currentMonthBilling.overdueCount + currentMonthBilling.pendingCount === 0
+                    ? `Seluruh tagihan periode ${currentMonth} telah lunas.`
+                    : `${currentMonthBilling.pendingCount + currentMonthBilling.overdueCount} tagihan bulan ${currentMonth} menunggu pelunasan.`}
+                </p>
+              )}
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 flex flex-col justify-between gap-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="font-display text-sm sm:text-base font-semibold text-slate-900">
+                  Disiplin Presensi & Kesiapan Lomba
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {coachMetrics.totalAttendance === 0
+                    ? 'Belum ada log presensi latihan tercatat'
+                    : `${coachMetrics.totalAttendance} catatan presensi · ${coachMetrics.hadir} kali hadir`}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => onNavigate('schedules')}
+                className="text-xs font-medium text-sky-700 hover:text-sky-800 inline-flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                Input Presensi <ArrowUpRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            <div className="space-y-2.5">
+              <div className="flex items-baseline justify-between gap-2">
+                <div className="font-mono-tabular text-2xl sm:text-3xl font-bold text-slate-900">
+                  {coachMetrics.attendanceRatePct}%{' '}
+                  <span className="text-xs sm:text-sm font-normal text-slate-500">kehadiran</span>
+                </div>
+                <div className="text-xs font-mono-tabular text-sky-800 font-semibold">
+                  {coachMetrics.upcomingCompetitions.length} lomba mendatang
+                </div>
+              </div>
+              <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-sky-700 transition-all duration-300"
+                  style={{ width: `${coachMetrics.attendanceRatePct}%` }}
+                />
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-slate-100 space-y-2">
+              <div className="grid grid-cols-3 divide-x divide-slate-200 text-xs">
+                <div className="pr-2 min-w-0">
+                  <span className="text-slate-500 block">Sesi Rutin</span>
+                  <span className="font-mono-tabular font-semibold text-slate-900">
+                    {schedules.length} jadwal
+                  </span>
+                </div>
+                <div className="px-3 min-w-0">
+                  <span className="text-slate-500 block">Absen 3x+</span>
+                  <span
+                    className={`font-mono-tabular font-semibold ${
+                      coachMetrics.consecutiveAbsenceAlerts.length > 0
+                        ? 'text-red-600'
+                        : 'text-emerald-700'
+                    }`}
+                  >
+                    {coachMetrics.consecutiveAbsenceAlerts.length} atlet
+                  </span>
+                </div>
+                <div className="pl-3 min-w-0">
+                  <span className="text-slate-500 block">Total Medali</span>
+                  <span className="font-mono-tabular font-semibold text-amber-700">
+                    {medalStats.gold + medalStats.silver + medalStats.bronze} medali
+                  </span>
+                </div>
+              </div>
+              <p className="text-[11px] text-slate-500 truncate">
+                {coachMetrics.consecutiveAbsenceAlerts.length > 0
+                  ? `Perlu tindak lanjut: ${coachMetrics.consecutiveAbsenceAlerts
+                      .slice(0, 2)
+                      .map((a) => `${a.athlete.fullName} (${a.streak}x)`)
+                      .join(', ')}`
+                  : 'Semua atlet aktif disiplin mengikuti sesi latihan.'}
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Priority Reminders Strip (Real data-driven alerts) */}
@@ -896,88 +1088,175 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
       )}
 
       {/* 4-Column KPI Strip (2x2 on mobile for compact scanning) */}
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
-        <button
-          type="button"
-          onClick={() => onNavigate('finance')}
-          className="text-left bg-white border border-slate-200 rounded-xl p-3.5 sm:p-5 hover:border-slate-300 transition-colors cursor-pointer min-w-0"
-        >
-          <div className="flex items-center justify-between text-[11px] sm:text-xs text-slate-500 mb-2 sm:mb-3 gap-1">
-            <span className="truncate">Saldo Kas Klub</span>
-            <TrendingUp className="w-4 h-4 text-emerald-600 shrink-0" />
-          </div>
-          <div className="font-mono-tabular text-base sm:text-2xl font-bold text-slate-900 truncate">
-            {formatRupiah(financeTotals.balance)}
-          </div>
-          <div className="mt-1.5 sm:mt-2 flex flex-wrap items-center gap-x-1.5 text-[11px] sm:text-xs text-slate-500">
-            <span className="truncate">Masuk {formatRupiah(financeTotals.income)}</span>
-          </div>
-        </button>
+      {!isCoach ? (
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+          <button
+            type="button"
+            onClick={() => onNavigate('finance')}
+            className="text-left bg-white border border-slate-200 rounded-xl p-3.5 sm:p-5 hover:border-slate-300 transition-colors cursor-pointer min-w-0"
+          >
+            <div className="flex items-center justify-between text-[11px] sm:text-xs text-slate-500 mb-2 sm:mb-3 gap-1">
+              <span className="truncate">Saldo Kas Klub</span>
+              <TrendingUp className="w-4 h-4 text-emerald-600 shrink-0" />
+            </div>
+            <div className="font-mono-tabular text-base sm:text-2xl font-bold text-slate-900 truncate">
+              {formatRupiah(financeTotals.balance)}
+            </div>
+            <div className="mt-1.5 sm:mt-2 flex flex-wrap items-center gap-x-1.5 text-[11px] sm:text-xs text-slate-500">
+              <span className="truncate">Masuk {formatRupiah(financeTotals.income)}</span>
+            </div>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => onNavigate('athletes')}
-          className="text-left bg-white border border-slate-200 rounded-xl p-3.5 sm:p-5 hover:border-slate-300 transition-colors cursor-pointer min-w-0"
-        >
-          <div className="flex items-center justify-between text-[11px] sm:text-xs text-slate-500 mb-2 sm:mb-3 gap-1">
-            <span className="truncate">Atlet Aktif & PB</span>
-            <Users className="w-4 h-4 text-sky-700 shrink-0" />
-          </div>
-          <div className="font-mono-tabular text-base sm:text-2xl font-bold text-slate-900">
-            {activeAthletesCount} <span className="text-xs sm:text-sm font-normal text-slate-500">atlet</span>
-          </div>
-          <div className="mt-1.5 sm:mt-2 flex flex-wrap items-center gap-x-1.5 text-[11px] sm:text-xs text-slate-500">
-            <span>{athletes.length} total</span>
-            <span aria-hidden="true">·</span>
-            <span>{personalBestCount} PB</span>
-          </div>
-        </button>
+          <button
+            type="button"
+            onClick={() => onNavigate('athletes')}
+            className="text-left bg-white border border-slate-200 rounded-xl p-3.5 sm:p-5 hover:border-slate-300 transition-colors cursor-pointer min-w-0"
+          >
+            <div className="flex items-center justify-between text-[11px] sm:text-xs text-slate-500 mb-2 sm:mb-3 gap-1">
+              <span className="truncate">Atlet Aktif & PB</span>
+              <Users className="w-4 h-4 text-sky-700 shrink-0" />
+            </div>
+            <div className="font-mono-tabular text-base sm:text-2xl font-bold text-slate-900">
+              {activeAthletesCount} <span className="text-xs sm:text-sm font-normal text-slate-500">atlet</span>
+            </div>
+            <div className="mt-1.5 sm:mt-2 flex flex-wrap items-center gap-x-1.5 text-[11px] sm:text-xs text-slate-500">
+              <span>{athletes.length} total</span>
+              <span aria-hidden="true">·</span>
+              <span>{personalBestCount} PB</span>
+            </div>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => onNavigate('invoices')}
-          className="text-left bg-white border border-slate-200 rounded-xl p-3.5 sm:p-5 hover:border-slate-300 transition-colors cursor-pointer min-w-0"
-        >
-          <div className="flex items-center justify-between text-[11px] sm:text-xs text-slate-500 mb-2 sm:mb-3 gap-1">
-            <span className="truncate">Tagihan Tertunda</span>
-            <Receipt className="w-4 h-4 text-amber-600 shrink-0" />
-          </div>
-          <div className="font-mono-tabular text-base sm:text-2xl font-bold text-slate-900 truncate">
-            {formatRupiah(unpaidTotal)}
-          </div>
-          <div className="mt-1.5 sm:mt-2 flex flex-wrap items-center gap-x-1.5 text-[11px] sm:text-xs text-slate-500">
-            <span>{unpaidInvoices.length} invoice</span>
-            <span aria-hidden="true">·</span>
-            <span>{invoices.filter((i) => i.status === 'Jatuh Tempo').length} tempo</span>
-          </div>
-        </button>
+          <button
+            type="button"
+            onClick={() => onNavigate('invoices')}
+            className="text-left bg-white border border-slate-200 rounded-xl p-3.5 sm:p-5 hover:border-slate-300 transition-colors cursor-pointer min-w-0"
+          >
+            <div className="flex items-center justify-between text-[11px] sm:text-xs text-slate-500 mb-2 sm:mb-3 gap-1">
+              <span className="truncate">Tagihan Tertunda</span>
+              <Receipt className="w-4 h-4 text-amber-600 shrink-0" />
+            </div>
+            <div className="font-mono-tabular text-base sm:text-2xl font-bold text-slate-900 truncate">
+              {formatRupiah(unpaidTotal)}
+            </div>
+            <div className="mt-1.5 sm:mt-2 flex flex-wrap items-center gap-x-1.5 text-[11px] sm:text-xs text-slate-500">
+              <span>{unpaidInvoices.length} invoice</span>
+              <span aria-hidden="true">·</span>
+              <span>{invoices.filter((i) => i.status === 'Jatuh Tempo').length} tempo</span>
+            </div>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => onNavigate('schedules')}
-          className="text-left bg-white border border-slate-200 rounded-xl p-3.5 sm:p-5 hover:border-slate-300 transition-colors cursor-pointer min-w-0"
-        >
-          <div className="flex items-center justify-between text-[11px] sm:text-xs text-slate-500 mb-2 sm:mb-3 gap-1">
-            <span className="truncate">Latihan & Medali</span>
-            <CalendarDays className="w-4 h-4 text-slate-700 shrink-0" />
-          </div>
-          <div className="font-mono-tabular text-base sm:text-2xl font-bold text-slate-900">
-            {schedules.length} <span className="text-xs sm:text-sm font-normal text-slate-500">sesi</span>
-          </div>
-          <div className="mt-1.5 sm:mt-2 flex flex-wrap items-center gap-x-1.5 text-[11px] sm:text-xs text-slate-500">
-            <span>{medalStats.gold} Emas</span>
-            <span aria-hidden="true">·</span>
-            <span>{medalStats.silver} Perak</span>
-            <span aria-hidden="true">·</span>
-            <span>{medalStats.bronze} Perunggu</span>
-          </div>
-        </button>
-      </div>
+          <button
+            type="button"
+            onClick={() => onNavigate('schedules')}
+            className="text-left bg-white border border-slate-200 rounded-xl p-3.5 sm:p-5 hover:border-slate-300 transition-colors cursor-pointer min-w-0"
+          >
+            <div className="flex items-center justify-between text-[11px] sm:text-xs text-slate-500 mb-2 sm:mb-3 gap-1">
+              <span className="truncate">Latihan & Medali</span>
+              <CalendarDays className="w-4 h-4 text-slate-700 shrink-0" />
+            </div>
+            <div className="font-mono-tabular text-base sm:text-2xl font-bold text-slate-900">
+              {schedules.length} <span className="text-xs sm:text-sm font-normal text-slate-500">sesi</span>
+            </div>
+            <div className="mt-1.5 sm:mt-2 flex flex-wrap items-center gap-x-1.5 text-[11px] sm:text-xs text-slate-500">
+              <span>{medalStats.gold} Emas</span>
+              <span aria-hidden="true">·</span>
+              <span>{medalStats.silver} Perak</span>
+              <span aria-hidden="true">·</span>
+              <span>{medalStats.bronze} Perunggu</span>
+            </div>
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+          <button
+            type="button"
+            onClick={() => onNavigate('athletes')}
+            className="text-left bg-white border border-slate-200 rounded-xl p-3.5 sm:p-5 hover:border-slate-300 transition-colors cursor-pointer min-w-0"
+          >
+            <div className="flex items-center justify-between text-[11px] sm:text-xs text-slate-500 mb-2 sm:mb-3 gap-1">
+              <span className="truncate">Atlet Aktif & PB</span>
+              <Users className="w-4 h-4 text-sky-700 shrink-0" />
+            </div>
+            <div className="font-mono-tabular text-base sm:text-2xl font-bold text-slate-900">
+              {activeAthletesCount} <span className="text-xs sm:text-sm font-normal text-slate-500">atlet</span>
+            </div>
+            <div className="mt-1.5 sm:mt-2 flex flex-wrap items-center gap-x-1.5 text-[11px] sm:text-xs text-slate-500">
+              <span>{athletes.length} total</span>
+              <span aria-hidden="true">·</span>
+              <span>{personalBestCount} PB</span>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onNavigate('schedules')}
+            className="text-left bg-white border border-slate-200 rounded-xl p-3.5 sm:p-5 hover:border-slate-300 transition-colors cursor-pointer min-w-0"
+          >
+            <div className="flex items-center justify-between text-[11px] sm:text-xs text-slate-500 mb-2 sm:mb-3 gap-1">
+              <span className="truncate">Tingkat Presensi</span>
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            </div>
+            <div className="font-mono-tabular text-base sm:text-2xl font-bold text-slate-900">
+              {coachMetrics.attendanceRatePct}%
+            </div>
+            <div className="mt-1.5 sm:mt-2 text-[11px] sm:text-xs text-slate-500 truncate">
+              {coachMetrics.hadir} hadir dari {coachMetrics.totalAttendance} log
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onNavigate('schedules')}
+            className="text-left bg-white border border-slate-200 rounded-xl p-3.5 sm:p-5 hover:border-slate-300 transition-colors cursor-pointer min-w-0"
+          >
+            <div className="flex items-center justify-between text-[11px] sm:text-xs text-slate-500 mb-2 sm:mb-3 gap-1">
+              <span className="truncate">Absen 3x+ Beruntun</span>
+              <AlertTriangle
+                className={`w-4 h-4 shrink-0 ${
+                  coachMetrics.consecutiveAbsenceAlerts.length > 0
+                    ? 'text-red-600'
+                    : 'text-slate-400'
+                }`}
+              />
+            </div>
+            <div className="font-mono-tabular text-base sm:text-2xl font-bold text-slate-900">
+              {coachMetrics.consecutiveAbsenceAlerts.length}{' '}
+              <span className="text-xs sm:text-sm font-normal text-slate-500">atlet</span>
+            </div>
+            <div className="mt-1.5 sm:mt-2 text-[11px] sm:text-xs text-slate-500 truncate">
+              {coachMetrics.consecutiveAbsenceAlerts.length > 0
+                ? 'Perlu follow-up pelatih'
+                : 'Semua kehadiran aman'}
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onNavigate('clubops')}
+            className="text-left bg-white border border-slate-200 rounded-xl p-3.5 sm:p-5 hover:border-slate-300 transition-colors cursor-pointer min-w-0"
+          >
+            <div className="flex items-center justify-between text-[11px] sm:text-xs text-slate-500 mb-2 sm:mb-3 gap-1">
+              <span className="truncate">Jadwal & Kejuaraan</span>
+              <CalendarDays className="w-4 h-4 text-sky-700 shrink-0" />
+            </div>
+            <div className="font-mono-tabular text-base sm:text-2xl font-bold text-slate-900">
+              {schedules.length} <span className="text-xs sm:text-sm font-normal text-slate-500">sesi</span>
+            </div>
+            <div className="mt-1.5 sm:mt-2 text-[11px] sm:text-xs text-slate-500 truncate">
+              {coachMetrics.upcomingCompetitions.length} lomba · {equipment.length} item alat
+            </div>
+          </button>
+        </div>
+      )}
 
       {/* Main 2-Column Analytical Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 sm:gap-6">
         <div className="lg:col-span-2">
-          <CashflowTrendChart transactions={transactions} />
+          {isCoach ? (
+            <SwimTimeTrendChart swimTimes={swimTimes} compact />
+          ) : (
+            <CashflowTrendChart transactions={transactions} />
+          )}
         </div>
 
         {/* Upcoming Training Sessions */}
@@ -1026,8 +1305,8 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
         </div>
       </div>
 
-      {/* Swim Time Progression Trend */}
-      <SwimTimeTrendChart swimTimes={swimTimes} compact />
+      {/* Swim Time Progression Trend (Admin only here since Coach displays it in main grid above) */}
+      {!isCoach && <SwimTimeTrendChart swimTimes={swimTimes} compact />}
 
       {/* Bottom 2-Column Operational Tables */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -1111,101 +1390,180 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           )}
         </div>
 
-        {/* Unpaid Invoices & Announcements */}
-        <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-6 space-y-6">
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2 className="font-display text-base font-semibold text-slate-900">
-                  Tagihan Perlu Tindak Lanjut
-                </h2>
-                <p className="text-xs text-slate-500">Invoice SPP dan registrasi lomba aktif</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => onNavigate('invoices')}
-                className="text-xs font-medium text-sky-700 hover:text-sky-800 inline-flex items-center gap-1 cursor-pointer"
-              >
-                Buka Invoice <ArrowUpRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            {unpaidInvoices.length === 0 ? (
-              <div className="py-6 text-center text-sm text-slate-500 flex flex-col items-center">
-                <CheckCircle2 className="w-6 h-6 text-emerald-600 mb-1.5" />
-                Semua invoice tagihan sudah lunas.
-              </div>
-            ) : (
-              <div className="divide-y divide-slate-100">
-                {unpaidInvoices.slice(0, 4).map((inv) => (
-                  <div key={inv.id} className="py-2.5 flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-slate-900 truncate">
-                        {inv.athleteName}
-                      </p>
-                      <p className="text-xs text-slate-500 truncate">
-                        {inv.invoiceNumber} · {inv.category} · Jatuh tempo {formatDateID(inv.dueDate)}
-                      </p>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <div className="font-mono-tabular text-sm font-semibold text-slate-900">
-                        {formatRupiah(inv.amount)}
-                      </div>
-                      <div
-                        className={`text-xs font-medium inline-flex items-center gap-1 ${
-                          inv.status === 'Jatuh Tempo'
-                            ? 'text-red-600'
-                            : inv.status === 'Menunggu Verifikasi'
-                            ? 'text-sky-700'
-                            : 'text-amber-700'
-                        }`}
-                      >
-                        {inv.status === 'Jatuh Tempo' ? (
-                          <TrendingDown className="w-3 h-3" />
-                        ) : (
-                          <AlertCircle className="w-3 h-3" />
-                        )}
-                        {inv.status}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {announcements.length > 0 && (
-            <div className="pt-5 border-t border-slate-200">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-display text-sm font-semibold text-slate-900">
-                  Administrasi & Pengumuman Terbaru
-                </h3>
+        {/* Unpaid Invoices & Announcements (Admin) or Competitions & Announcements (Coach) */}
+        {!isCoach ? (
+          <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-6 space-y-6">
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="font-display text-base font-semibold text-slate-900">
+                    Tagihan Perlu Tindak Lanjut
+                  </h2>
+                  <p className="text-xs text-slate-500">Invoice SPP dan registrasi lomba aktif</p>
+                </div>
                 <button
                   type="button"
                   onClick={() => onNavigate('invoices')}
-                  className="text-xs font-medium text-sky-700 hover:text-sky-800 cursor-pointer"
+                  className="text-xs font-medium text-sky-700 hover:text-sky-800 inline-flex items-center gap-1 cursor-pointer"
                 >
-                  Lihat Surat
+                  Buka Invoice <ArrowUpRight className="w-3.5 h-3.5" />
                 </button>
               </div>
-              <div className="space-y-2">
-                {announcements.slice(0, 2).map((ann) => (
-                  <div key={ann.id} className="text-xs text-slate-600">
-                    <span className="font-semibold text-slate-900">{ann.title}</span>
-                    <span className="mx-1.5 text-slate-400">·</span>
-                    <span>{ann.docType}</span>
-                    {ann.eventDate && (
-                      <>
-                        <span className="mx-1.5 text-slate-400">·</span>
-                        <span className="font-mono-tabular">{formatDateID(ann.eventDate)}</span>
-                      </>
-                    )}
-                  </div>
-                ))}
-              </div>
+
+              {unpaidInvoices.length === 0 ? (
+                <div className="py-6 text-center text-sm text-slate-500 flex flex-col items-center">
+                  <CheckCircle2 className="w-6 h-6 text-emerald-600 mb-1.5" />
+                  Semua invoice tagihan sudah lunas.
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {unpaidInvoices.slice(0, 4).map((inv) => (
+                    <div key={inv.id} className="py-2.5 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-slate-900 truncate">
+                          {inv.athleteName}
+                        </p>
+                        <p className="text-xs text-slate-500 truncate">
+                          {inv.invoiceNumber} · {inv.category} · Jatuh tempo {formatDateID(inv.dueDate)}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="font-mono-tabular text-sm font-semibold text-slate-900">
+                          {formatRupiah(inv.amount)}
+                        </div>
+                        <div
+                          className={`text-xs font-medium inline-flex items-center gap-1 ${
+                            inv.status === 'Jatuh Tempo'
+                              ? 'text-red-600'
+                              : inv.status === 'Menunggu Verifikasi'
+                              ? 'text-sky-700'
+                              : 'text-amber-700'
+                          }`}
+                        >
+                          {inv.status === 'Jatuh Tempo' ? (
+                            <TrendingDown className="w-3 h-3" />
+                          ) : (
+                            <AlertCircle className="w-3 h-3" />
+                          )}
+                          {inv.status}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-          )}
-        </div>
+
+            {announcements.length > 0 && (
+              <div className="pt-5 border-t border-slate-200">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-display text-sm font-semibold text-slate-900">
+                    Administrasi & Pengumuman Terbaru
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => onNavigate('invoices')}
+                    className="text-xs font-medium text-sky-700 hover:text-sky-800 cursor-pointer"
+                  >
+                    Lihat Surat
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {announcements.slice(0, 2).map((ann) => (
+                    <div key={ann.id} className="text-xs text-slate-600">
+                      <span className="font-semibold text-slate-900">{ann.title}</span>
+                      <span className="mx-1.5 text-slate-400">·</span>
+                      <span>{ann.docType}</span>
+                      {ann.eventDate && (
+                        <>
+                          <span className="mx-1.5 text-slate-400">·</span>
+                          <span className="font-mono-tabular">{formatDateID(ann.eventDate)}</span>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-6 space-y-6">
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="font-display text-base font-semibold text-slate-900">
+                    Agenda Kejuaraan Mendatang
+                  </h2>
+                  <p className="text-xs text-slate-500">Kalender target lomba & time trial klub</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('clubops')}
+                  className="text-xs font-medium text-sky-700 hover:text-sky-800 inline-flex items-center gap-1 cursor-pointer"
+                >
+                  Info Klub <ArrowUpRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {coachMetrics.upcomingCompetitions.length === 0 ? (
+                <div className="py-6 text-center text-sm text-slate-500">
+                  Belum ada agenda kejuaraan mendatang.
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {coachMetrics.upcomingCompetitions.slice(0, 4).map((comp) => (
+                    <div key={comp.id} className="py-2.5 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-slate-900 truncate">{comp.name}</p>
+                        <p className="text-xs text-slate-500 truncate">
+                          {comp.location} · {comp.poolCourse} · {comp.level}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="font-mono-tabular text-xs font-semibold text-slate-900">
+                          {formatDateID(comp.startDate)}
+                        </div>
+                        <div className="text-[11px] font-medium text-sky-700">{comp.status}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {announcements.length > 0 && (
+              <div className="pt-5 border-t border-slate-200">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-display text-sm font-semibold text-slate-900">
+                    Pengumuman & Surat Klub Terbaru
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => onNavigate('clubops')}
+                    className="text-xs font-medium text-sky-700 hover:text-sky-800 cursor-pointer"
+                  >
+                    Lihat Pengumuman
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {announcements.slice(0, 3).map((ann) => (
+                    <div key={ann.id} className="text-xs text-slate-600">
+                      <span className="font-semibold text-slate-900">{ann.title}</span>
+                      <span className="mx-1.5 text-slate-400">·</span>
+                      <span>{ann.docType}</span>
+                      {ann.eventDate && (
+                        <>
+                          <span className="mx-1.5 text-slate-400">·</span>
+                          <span className="font-mono-tabular">{formatDateID(ann.eventDate)}</span>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

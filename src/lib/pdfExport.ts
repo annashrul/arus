@@ -44,6 +44,7 @@ export interface GenerateClubPdfOptions {
   pools?: PoolFacility[];
   equipment?: EquipmentItem[];
   competitions?: ClubCompetition[];
+  hideFinancial?: boolean;
 }
 
 /**
@@ -172,6 +173,7 @@ export function downloadClubSummaryPdf(options: GenerateClubPdfOptions): void {
     pools = [],
     equipment = [],
     competitions = [],
+    hideFinancial = false,
   } = options;
 
   const today = todayISO();
@@ -458,19 +460,31 @@ export function downloadClubSummaryPdf(options: GenerateClubPdfOptions): void {
       margin: { left: marginX, right: marginX },
       styles: baseTableStyles,
       headStyles: baseHeadStyles,
-      head: [['Nama Atlet', 'KU / Gender', 'Pelatih', 'Wali & Kontak', 'SPP/Bln', 'Status']],
+      head: hideFinancial
+        ? [['Nama Atlet', 'KU / Gender', 'Pelatih', 'Wali & Kontak', 'Status']]
+        : [['Nama Atlet', 'KU / Gender', 'Pelatih', 'Wali & Kontak', 'SPP/Bln', 'Status']],
       body:
         sortedAth.length > 0
-          ? sortedAth.map((a) => [
-              pdfText(a.fullName),
-              pdfText(`${a.ageGroup} | ${a.gender}`),
-              pdfText(a.coachName || club.headCoach),
-              pdfText(`${a.parentName || '-'} (${a.parentPhone || '-'})`),
-              pdfText(formatRupiah(a.monthlyFee)),
-              pdfText(a.status),
-            ])
-          : [['Belum ada data atlet.', '', '', '', '', '']],
-      columnStyles: { 4: { halign: 'right' } },
+          ? sortedAth.map((a) =>
+              hideFinancial
+                ? [
+                    pdfText(a.fullName),
+                    pdfText(`${a.ageGroup} | ${a.gender}`),
+                    pdfText(a.coachName || club.headCoach),
+                    pdfText(`${a.parentName || '-'} (${a.parentPhone || '-'})`),
+                    pdfText(a.status),
+                  ]
+                : [
+                    pdfText(a.fullName),
+                    pdfText(`${a.ageGroup} | ${a.gender}`),
+                    pdfText(a.coachName || club.headCoach),
+                    pdfText(`${a.parentName || '-'} (${a.parentPhone || '-'})`),
+                    pdfText(formatRupiah(a.monthlyFee)),
+                    pdfText(a.status),
+                  ]
+            )
+          : [hideFinancial ? ['Belum ada data atlet.', '', '', '', ''] : ['Belum ada data atlet.', '', '', '', '', '']],
+      columnStyles: hideFinancial ? undefined : { 4: { halign: 'right' } },
     });
     cursorY = getLastTableFinalY(doc, cursorY) + 7;
 
@@ -653,34 +667,48 @@ export function downloadClubSummaryPdf(options: GenerateClubPdfOptions): void {
   if (kind === 'clubops') {
     const activeCoaches = coaches.filter((c) => c.status === 'Aktif').length;
     const totalUnits = equipment.reduce((acc, e) => acc + e.quantity, 0);
+    const goodEquipment = equipment.filter((e) => e.condition === 'Baik').length;
 
-    cursorY = drawSummaryGrid(doc, cursorY, [
-      { label: 'Pelatih Aktif', value: `${activeCoaches} / ${coaches.length}` },
-      { label: 'Fasilitas Kolam', value: `${pools.length} lokasi` },
-      { label: 'Perlengkapan', value: `${totalUnits} unit`, sub: `${equipment.length} jenis` },
-      { label: 'Agenda Kejuaraan', value: `${competitions.length} lomba` },
-    ]);
+    cursorY = drawSummaryGrid(
+      doc,
+      cursorY,
+      hideFinancial
+        ? [
+            { label: 'Fasilitas Kolam', value: `${pools.length} lokasi` },
+            { label: 'Perlengkapan', value: `${totalUnits} unit`, sub: `${equipment.length} jenis` },
+            { label: 'Kondisi Baik', value: `${goodEquipment} / ${equipment.length} item` },
+            { label: 'Agenda Kejuaraan', value: `${competitions.length} lomba` },
+          ]
+        : [
+            { label: 'Pelatih Aktif', value: `${activeCoaches} / ${coaches.length}` },
+            { label: 'Fasilitas Kolam', value: `${pools.length} lokasi` },
+            { label: 'Perlengkapan', value: `${totalUnits} unit`, sub: `${equipment.length} jenis` },
+            { label: 'Agenda Kejuaraan', value: `${competitions.length} lomba` },
+          ]
+    );
 
-    cursorY = drawSectionHeading(doc, cursorY, `Tim Pelatih & Staf (${coaches.length})`);
-    autoTable(doc, {
-      startY: cursorY,
-      margin: { left: marginX, right: marginX },
-      styles: baseTableStyles,
-      headStyles: baseHeadStyles,
-      head: [['Nama Pelatih', 'Peran & Lisensi', 'Telepon', 'Status', 'Honorarium/Bln']],
-      body:
-        coaches.length > 0
-          ? coaches.map((c) => [
-              pdfText(c.fullName),
-              pdfText(`${c.role} | ${c.licenseLevel}`),
-              pdfText(c.phone || '-'),
-              pdfText(c.status),
-              pdfText(formatRupiah(c.monthlyHonorarium)),
-            ])
-          : [['Belum ada data pelatih.', '', '', '', '']],
-      columnStyles: { 4: { halign: 'right' } },
-    });
-    cursorY = getLastTableFinalY(doc, cursorY) + 7;
+    if (!hideFinancial) {
+      cursorY = drawSectionHeading(doc, cursorY, `Tim Pelatih & Staf (${coaches.length})`);
+      autoTable(doc, {
+        startY: cursorY,
+        margin: { left: marginX, right: marginX },
+        styles: baseTableStyles,
+        headStyles: baseHeadStyles,
+        head: [['Nama Pelatih', 'Peran & Lisensi', 'Telepon', 'Status', 'Honorarium/Bln']],
+        body:
+          coaches.length > 0
+            ? coaches.map((c) => [
+                pdfText(c.fullName),
+                pdfText(`${c.role} | ${c.licenseLevel}`),
+                pdfText(c.phone || '-'),
+                pdfText(c.status),
+                pdfText(formatRupiah(c.monthlyHonorarium)),
+              ])
+            : [['Belum ada data pelatih.', '', '', '', '']],
+        columnStyles: { 4: { halign: 'right' } },
+      });
+      cursorY = getLastTableFinalY(doc, cursorY) + 7;
+    }
 
     cursorY = drawSectionHeading(doc, cursorY, `Fasilitas Kolam (${pools.length})`);
     autoTable(doc, {
@@ -688,18 +716,29 @@ export function downloadClubSummaryPdf(options: GenerateClubPdfOptions): void {
       margin: { left: marginX, right: marginX },
       styles: baseTableStyles,
       headStyles: baseHeadStyles,
-      head: [['Nama Kolam', 'Tipe', 'Lintasan', 'Status', 'Sewa/Sesi']],
+      head: hideFinancial
+        ? [['Nama Kolam', 'Tipe', 'Lintasan', 'Status']]
+        : [['Nama Kolam', 'Tipe', 'Lintasan', 'Status', 'Sewa/Sesi']],
       body:
         pools.length > 0
-          ? pools.map((p) => [
-              pdfText(p.name),
-              pdfText(p.poolType),
-              pdfText(`${p.laneCount} lintasan`),
-              pdfText(p.status),
-              pdfText(formatRupiah(p.rentalCostPerSession)),
-            ])
-          : [['Belum ada fasilitas kolam.', '', '', '', '']],
-      columnStyles: { 4: { halign: 'right' } },
+          ? pools.map((p) =>
+              hideFinancial
+                ? [
+                    pdfText(p.name),
+                    pdfText(p.poolType),
+                    pdfText(`${p.laneCount} lintasan`),
+                    pdfText(p.status),
+                  ]
+                : [
+                    pdfText(p.name),
+                    pdfText(p.poolType),
+                    pdfText(`${p.laneCount} lintasan`),
+                    pdfText(p.status),
+                    pdfText(formatRupiah(p.rentalCostPerSession)),
+                  ]
+            )
+          : [hideFinancial ? ['Belum ada fasilitas kolam.', '', '', ''] : ['Belum ada fasilitas kolam.', '', '', '', '']],
+      columnStyles: hideFinancial ? undefined : { 4: { halign: 'right' } },
     });
     cursorY = getLastTableFinalY(doc, cursorY) + 7;
 

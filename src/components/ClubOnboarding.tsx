@@ -1,16 +1,31 @@
 import React, { useState } from 'react';
-import { signInWithPopup, User } from 'firebase/auth';
+import { signInWithPopup, signOut, User } from 'firebase/auth';
 import { auth, googleProvider } from '../lib/firebase';
 import { createClubAndSeedData } from '../lib/seedSampleClub';
 import { clampString, FieldErrors, LIMITS } from '../lib/validation';
-import { AlertTriangle, ArrowRight, CheckCircle2, Loader2, ShieldCheck } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowRight,
+  CheckCircle2,
+  Loader2,
+  LogOut,
+  RefreshCw,
+  ShieldCheck,
+} from 'lucide-react';
 
 interface ClubOnboardingProps {
   user: User | null;
   onClubCreated: () => void;
+  checkingAccess?: boolean;
+  onRefreshAccess?: () => void;
 }
 
-export const ClubOnboarding: React.FC<ClubOnboardingProps> = ({ user, onClubCreated }) => {
+export const ClubOnboarding: React.FC<ClubOnboardingProps> = ({
+  user,
+  onClubCreated,
+  checkingAccess = false,
+  onRefreshAccess,
+}) => {
   const [signingIn, setSigningIn] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
 
@@ -205,15 +220,52 @@ export const ClubOnboarding: React.FC<ClubOnboardingProps> = ({ user, onClubCrea
           </div>
         ) : (
           <form onSubmit={handleCreateClub} noValidate className="w-full max-w-md space-y-5 sm:space-y-6 pt-1 sm:pt-0">
-            <div className="space-y-1.5">
-              <p className="text-xs text-slate-500 truncate">
-                Masuk sebagai {user.email}
+            <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50 space-y-2.5">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-[11px] font-medium text-slate-500">Login Google Aktif</div>
+                  <div className="font-mono-tabular text-xs font-semibold text-slate-900 truncate">
+                    {user.email}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => signOut(auth)}
+                  className="inline-flex items-center gap-1 px-2.5 min-h-[32px] text-[11px] font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-100 rounded-lg shrink-0 cursor-pointer"
+                >
+                  <LogOut className="w-3 h-3" />
+                  Ganti Akun
+                </button>
+              </div>
+              <p className="text-[11px] text-slate-600 leading-relaxed">
+                Jika Anda login sebagai <span className="font-semibold text-slate-800">Pelatih</span> atau{' '}
+                <span className="font-semibold text-slate-800">Wali Murid</span>, pastikan Admin Klub sudah mendaftarkan email Google Anda di menu{' '}
+                <span className="font-medium text-slate-800">Invoice &amp; Adm → Akses Role</span> lalu tekan{' '}
+                <span className="font-medium text-slate-800">Sinkronkan Akses</span>.
               </p>
+              {onRefreshAccess && (
+                <button
+                  type="button"
+                  disabled={checkingAccess}
+                  onClick={onRefreshAccess}
+                  className="inline-flex items-center gap-1.5 px-3 min-h-[34px] text-xs font-medium text-sky-800 bg-sky-50 hover:bg-sky-100 rounded-lg cursor-pointer disabled:opacity-60"
+                >
+                  {checkingAccess ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="w-3.5 h-3.5" />
+                  )}
+                  {checkingAccess ? 'Memeriksa Akses...' : 'Cek Ulang Akses Klub'}
+                </button>
+              )}
+            </div>
+
+            <div className="space-y-1.5">
               <h2 className="font-display text-xl sm:text-2xl font-bold text-slate-900">
                 Setup Profil Klub Renang Anda
               </h2>
               <p className="text-sm text-slate-600">
-                Lengkapi identitas klub untuk kop surat, invoice tagihan SPP, dan pencatatan kas.
+                Khusus Admin/Pengurus baru: lengkapi identitas klub untuk kop surat, invoice SPP, dan pencatatan kas.
               </p>
             </div>
 

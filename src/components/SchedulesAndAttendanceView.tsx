@@ -15,6 +15,7 @@ import {
   isValidBlueprintDate,
   isValidBlueprintTime,
   LIMITS,
+  normalizeEmail,
   timeToMinutes,
   validateAttendanceDate,
   validateScheduleInput,
@@ -37,6 +38,7 @@ import {
   SESSION_TYPES,
   todayISO,
   TrainingSchedule,
+  UserRole,
 } from '../types/club';
 import {
   buildAttendanceSheet,
@@ -81,6 +83,8 @@ interface SchedulesAndAttendanceViewProps {
   coaches?: Coach[];
   pools?: PoolFacility[];
   onOpenPrintReport: () => void;
+  userRole?: UserRole;
+  ownerId?: string;
 }
 
 export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProps> = ({
@@ -92,7 +96,11 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
   coaches = [],
   pools = [],
   onOpenPrintReport,
+  userRole = 'admin',
+  ownerId,
 }) => {
+  const isCoach = userRole === 'coach';
+  const effectiveOwnerId = ownerId || club.ownerId || userId;
   const [activeTab, setActiveTab] = useQueryParam<'schedules' | 'attendance'>(
     'jd_tab',
     'schedules',
@@ -409,7 +417,9 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
         await addDoc(collection(db, 'schedules'), {
           ...payload,
           clubId: club.id,
-          ownerId: userId,
+          ownerId: effectiveOwnerId,
+          coachEmails: club.coachEmails || [],
+          parentEmails: club.parentEmails || [],
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         }).catch((err) => handleFirestoreError(err, OperationType.CREATE, 'schedules'));
@@ -476,12 +486,14 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
       } else {
         await addDoc(collection(db, 'attendance'), {
           clubId: club.id,
-          ownerId: userId,
+          ownerId: effectiveOwnerId,
           scheduleId: activeSchedule.id,
           scheduleTitle: clampString(activeSchedule.title, LIMITS.schedule.titleMax),
           sessionDate: attendanceDate,
           athleteId: athlete.id,
           athleteName: clampString(athlete.fullName, LIMITS.athlete.fullNameMax),
+          parentEmail: normalizeEmail(athlete.parentEmail),
+          coachEmails: club.coachEmails || [],
           status,
           notes: '',
           createdAt: serverTimestamp(),
@@ -757,7 +769,7 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
                           <span className="font-mono-tabular">{sch.startTime}–{sch.endTime}</span>
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
-                          {confirmDeleteId === sch.id ? (
+                          {confirmDeleteId === sch.id && !isCoach ? (
                             <div className="inline-flex items-center gap-1">
                               <button
                                 type="button"
@@ -784,14 +796,16 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
                               >
                                 <Edit3 className="w-3.5 h-3.5" />
                               </button>
-                              <button
-                                type="button"
-                                onClick={() => setConfirmDeleteId(sch.id)}
-                                className="p-1.5 text-slate-400 hover:text-red-600 rounded cursor-pointer"
-                                title="Hapus jadwal"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
+                              {!isCoach && (
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmDeleteId(sch.id)}
+                                  className="p-1.5 text-slate-400 hover:text-red-600 rounded cursor-pointer"
+                                  title="Hapus jadwal"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
                             </>
                           )}
                         </div>

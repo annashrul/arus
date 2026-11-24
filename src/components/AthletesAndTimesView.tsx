@@ -13,10 +13,13 @@ import {
   clampString,
   FieldErrors,
   isValidBlueprintDate,
+  isValidEmailFormat,
   isValidPhoneFormat,
   LIMITS,
+  normalizeEmail,
   normalizeTextKey,
 } from '../lib/validation';
+import { syncAthleteParentAccess } from '../lib/roleAccess';
 import {
   AGE_GROUPS,
   AgeGroup,
@@ -40,6 +43,7 @@ import {
   SwimStroke,
   SwimTime,
   todayISO,
+  UserRole,
 } from '../types/club';
 import {
   buildAthletesSheet,
@@ -79,6 +83,8 @@ interface AthletesAndTimesViewProps {
   invoices: ClubInvoice[];
   coaches?: Coach[];
   onOpenPrintReport: () => void;
+  userRole?: UserRole;
+  ownerId?: string;
 }
 
 export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
@@ -89,7 +95,11 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
   invoices,
   coaches = [],
   onOpenPrintReport,
+  userRole = 'admin',
+  ownerId,
 }) => {
+  const isCoach = userRole === 'coach';
+  const effectiveOwnerId = ownerId || club.ownerId || userId;
   const [activeTab, setActiveTab] = useQueryParam<'athletes' | 'times'>(
     'at_tab',
     'athletes',
@@ -140,6 +150,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
   const [status, setStatus] = useState<AthleteStatus>('Aktif');
   const [parentName, setParentName] = useState('');
   const [parentPhone, setParentPhone] = useState('');
+  const [parentEmail, setParentEmail] = useState('');
   const [coachName, setCoachName] = useState(club.headCoach);
   const [monthlyFee, setMonthlyFee] = useState(String(club.defaultMonthlyFee));
   const [joinDate, setJoinDate] = useState(todayISO());
@@ -185,7 +196,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
         if (statusFilter !== 'all' && a.status !== statusFilter) return false;
         if (coachFilter !== 'all' && (a.coachName || club.headCoach) !== coachFilter) return false;
         if (q) {
-          const hay = `${a.fullName} ${a.parentName || ''} ${a.coachName || ''} ${a.ageGroup}`.toLowerCase();
+          const hay = `${a.fullName} ${a.parentName || ''} ${a.parentEmail || ''} ${a.coachName || ''} ${a.ageGroup}`.toLowerCase();
           if (!hay.includes(q)) return false;
         }
         return true;
@@ -274,6 +285,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
     setStatus('Aktif');
     setParentName('');
     setParentPhone('');
+    setParentEmail('');
     setCoachName(club.headCoach);
     setMonthlyFee(String(club.defaultMonthlyFee));
     setJoinDate(todayISO());
@@ -292,6 +304,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
     setStatus(ath.status);
     setParentName(ath.parentName || '');
     setParentPhone(ath.parentPhone || '');
+    setParentEmail(ath.parentEmail || '');
     setCoachName(ath.coachName || club.headCoach);
     setMonthlyFee(String(ath.monthlyFee));
     setJoinDate(ath.joinDate);
@@ -305,10 +318,30 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
     e.preventDefault();
     setAthleteError(null);
 
+    if (isCoach) {
+      if (!editingAthlete) return;
+      setSavingAthlete(true);
+      try {
+        await updateDoc(doc(db, 'athletes', editingAthlete.id), {
+          notes: clampString(athleteNotes, LIMITS.athlete.notesMax),
+          updatedAt: serverTimestamp(),
+        }).catch((err) =>
+          handleFirestoreError(err, OperationType.UPDATE, `athletes/${editingAthlete.id}`)
+        );
+        setAthleteModalOpen(false);
+      } catch (err) {
+        setAthleteError(err instanceof Error ? err.message : 'Gagal menyimpan catatan atlet.');
+      } finally {
+        setSavingAthlete(false);
+      }
+      return;
+    }
+
     const errors: FieldErrors<string> = {};
     const cleanName = clampString(fullName, LIMITS.athlete.fullNameMax);
     const cleanParentName = clampString(parentName, LIMITS.athlete.parentNameMax);
     const cleanParentPhone = clampString(parentPhone, LIMITS.athlete.parentPhoneMax);
+    const cleanParentEmail = normalizeEmail(clampString(parentEmail, LIMITS.athlete.parentEmailMax));
     const cleanCoach = clampString(coachName, LIMITS.athlete.coachNameMax);
     const parsedFee = Number(monthlyFee);
     const today = todayISO();
@@ -347,6 +380,9 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
     }
     if (cleanParentPhone && !isValidPhoneFormat(cleanParentPhone)) {
       errors.parentPhone = 'Nomor WhatsApp wali harus berisi 8–16 digit angka yang valid.';
+    }
+    if (cleanParentEmail && !isValidEmailFormat(cleanParentEmail)) {
+      errors.parentEmail = 'Format email Google wali murid tidak valid.';
     }
     if (cleanCoach && cleanCoach.length < 2) {
       errors.coachName = 'Nama pelatih minimal 2 karakter jika diisi.';
@@ -391,11 +427,15 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
         status,
         parentName: cleanParentName,
         parentPhone: cleanParentPhone,
+        parentEmail: cleanParentEmail,
         coachName: cleanCoach,
         monthlyFee: Math.round(parsedFee),
         joinDate,
         notes: clampString(athleteNotes, LIMITS.athlete.notesMax),
       };
+
+      let savedAthleteId = editingAthlete?.id || '';
+      const prevParentEmail = normalizeEmail(editingAthlete?.parentEmail);
 
       if (editingAthlete) {
         await updateDoc(doc(db, 'athletes', editingAthlete.id), {
@@ -403,13 +443,34 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
           updatedAt: serverTimestamp(),
         }).catch((err) => handleFirestoreError(err, OperationType.UPDATE, `athletes/${editingAthlete.id}`));
       } else {
-        await addDoc(collection(db, 'athletes'), {
+        const createdRef = await addDoc(collection(db, 'athletes'), {
           ...payload,
           clubId: club.id,
-          ownerId: userId,
+          ownerId: effectiveOwnerId,
+          coachEmails: club.coachEmails || [],
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         }).catch((err) => handleFirestoreError(err, OperationType.CREATE, 'athletes'));
+        savedAthleteId = createdRef.id;
+      }
+
+      const parentAccessChanged =
+        cleanParentEmail !== prevParentEmail ||
+        (Boolean(cleanParentEmail) &&
+          (!editingAthlete ||
+            cleanParentName !== (editingAthlete.parentName || '') ||
+            cleanName !== editingAthlete.fullName));
+
+      if (savedAthleteId && parentAccessChanged) {
+        await syncAthleteParentAccess({
+          club,
+          ownerId: effectiveOwnerId,
+          athleteId: savedAthleteId,
+          athleteName: cleanName,
+          parentName: cleanParentName,
+          nextParentEmail: cleanParentEmail,
+          prevParentEmail,
+        });
       }
       setAthleteModalOpen(false);
     } catch (err) {
@@ -584,8 +645,10 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
         batch.set(newRef, {
           ...payload,
           clubId: club.id,
-          ownerId: userId,
+          ownerId: effectiveOwnerId,
           athleteId: athleteObj.id,
+          parentEmail: normalizeEmail(athleteObj.parentEmail),
+          coachEmails: club.coachEmails || [],
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
@@ -616,19 +679,35 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
   const handleExportAthletesCSV = () => {
     downloadCSV(
       `daftar-atlet-${club.name.toLowerCase().replace(/\s+/g, '-')}.csv`,
-      ['Nama Lengkap', 'Gender', 'Tanggal Lahir', 'Kelompok Umur', 'Status', 'Wali', 'Telepon Wali', 'Pelatih', 'SPP (IDR)', 'Bergabung'],
-      filteredAthletes.map((a) => [
-        a.fullName,
-        a.gender,
-        a.birthDate,
-        a.ageGroup,
-        a.status,
-        a.parentName || '-',
-        a.parentPhone || '-',
-        a.coachName || '-',
-        a.monthlyFee,
-        a.joinDate,
-      ])
+      isCoach
+        ? ['Nama Lengkap', 'Gender', 'Tanggal Lahir', 'Kelompok Umur', 'Status', 'Wali', 'Telepon Wali', 'Pelatih', 'Bergabung']
+        : ['Nama Lengkap', 'Gender', 'Tanggal Lahir', 'Kelompok Umur', 'Status', 'Wali', 'Telepon Wali', 'Pelatih', 'SPP (IDR)', 'Bergabung'],
+      filteredAthletes.map((a) =>
+        isCoach
+          ? [
+              a.fullName,
+              a.gender,
+              a.birthDate,
+              a.ageGroup,
+              a.status,
+              a.parentName || '-',
+              a.parentPhone || '-',
+              a.coachName || '-',
+              a.joinDate,
+            ]
+          : [
+              a.fullName,
+              a.gender,
+              a.birthDate,
+              a.ageGroup,
+              a.status,
+              a.parentName || '-',
+              a.parentPhone || '-',
+              a.coachName || '-',
+              a.monthlyFee,
+              a.joinDate,
+            ]
+      )
     );
   };
 
@@ -653,7 +732,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
   const handleExportAthletesExcel = () => {
     downloadExcelWorkbook(
       `atlet-dan-waktu-${club.name.toLowerCase().replace(/\s+/g, '-')}.xlsx`,
-      [buildAthletesSheet(filteredAthletes), buildSwimTimesSheet(filteredTimes)]
+      [buildAthletesSheet(filteredAthletes, { hideFinancial: isCoach }), buildSwimTimesSheet(filteredTimes)]
     );
   };
 
@@ -685,7 +764,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
           </p>
         </div>
 
-        <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 shrink-0">
+        <div className={`${isCoach && activeTab === 'athletes' ? 'flex' : 'grid grid-cols-2 sm:flex'} sm:flex-wrap items-center gap-2 shrink-0`}>
           <ExportActionMenu
             label="Ekspor & Cetak"
             options={[
@@ -702,6 +781,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                     athletes: filteredAthletes,
                     swimTimes: filteredTimes,
                     periodLabel: 'Sesuai Filter Aktif',
+                    hideFinancial: isCoach,
                   }),
               },
               {
@@ -739,14 +819,16 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
             ]}
           />
           {activeTab === 'athletes' ? (
-            <button
-              type="button"
-              onClick={openCreateAthlete}
-              className="inline-flex items-center justify-center gap-1.5 px-4 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              <UserPlus className="w-3.5 h-3.5" />
-              Tambah Atlet
-            </button>
+            !isCoach && (
+              <button
+                type="button"
+                onClick={openCreateAthlete}
+                className="inline-flex items-center justify-center gap-1.5 px-4 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                Tambah Atlet
+              </button>
+            )
           ) : (
             <button
               type="button"
@@ -887,16 +969,20 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
               <div className="p-12 text-center space-y-3">
                 <p className="text-sm font-medium text-slate-900">Belum ada data atlet</p>
                 <p className="text-xs text-slate-500">
-                  Tambahkan profil atlet untuk mencatat waktu kejuaraan, presensi latihan, dan tagihan SPP.
+                  {isCoach
+                    ? 'Belum ada data atlet sesuai filter atau atlet belum didaftarkan oleh Admin klub.'
+                    : 'Tambahkan profil atlet untuk mencatat waktu kejuaraan, presensi latihan, dan tagihan SPP.'}
                 </p>
-                <button
-                  type="button"
-                  onClick={openCreateAthlete}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-sky-700 text-white text-xs font-medium rounded-lg hover:bg-sky-800 cursor-pointer"
-                >
-                  <UserPlus className="w-3.5 h-3.5" />
-                  Tambah Atlet Pertama
-                </button>
+                {!isCoach && (
+                  <button
+                    type="button"
+                    onClick={openCreateAthlete}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-sky-700 text-white text-xs font-medium rounded-lg hover:bg-sky-800 cursor-pointer"
+                  >
+                    <UserPlus className="w-3.5 h-3.5" />
+                    Tambah Atlet Pertama
+                  </button>
+                )}
               </div>
             ) : (
               <>
@@ -933,16 +1019,25 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                         <span className="font-mono-tabular text-sky-800 font-medium">
                           {athletePBMap.get(ath.id) || 0} nomor PB
                         </span>
-                        <span className="font-mono-tabular font-semibold text-slate-900">
-                          SPP {formatRupiah(ath.monthlyFee)}
-                        </span>
+                        {!isCoach && (
+                          <span className="font-mono-tabular font-semibold text-slate-900">
+                            SPP {formatRupiah(ath.monthlyFee)}
+                          </span>
+                        )}
                       </div>
-                      <div className="flex items-center justify-between pt-1">
-                        <span className="text-xs text-slate-500 truncate">
-                          Wali: {ath.parentName || '-'}
-                        </span>
+                      <div className="flex items-center justify-between pt-1 gap-2">
+                        <div className="min-w-0">
+                          <span className="text-xs text-slate-500 truncate block">
+                            Wali: {ath.parentName || '-'}
+                          </span>
+                          {!isCoach && ath.parentEmail && (
+                            <span className="text-[11px] text-sky-700 truncate block">
+                              {ath.parentEmail}
+                            </span>
+                          )}
+                        </div>
                         <div className="inline-flex items-center gap-1.5 shrink-0">
-                          {confirmDeleteAthleteId === ath.id ? (
+                          {confirmDeleteAthleteId === ath.id && !isCoach ? (
                             <>
                               <button
                                 type="button"
@@ -973,15 +1068,17 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                                 onClick={() => openEditAthlete(ath)}
                                 className="px-3 min-h-[40px] text-xs font-medium text-slate-700 bg-slate-100 rounded-lg cursor-pointer"
                               >
-                                Edit
+                                {isCoach ? 'Catatan' : 'Edit'}
                               </button>
-                              <button
-                                type="button"
-                                onClick={() => setConfirmDeleteAthleteId(ath.id)}
-                                className="px-3 min-h-[40px] text-xs font-medium text-red-700 bg-red-50 rounded-lg cursor-pointer"
-                              >
-                                Hapus
-                              </button>
+                              {!isCoach && (
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmDeleteAthleteId(ath.id)}
+                                  className="px-3 min-h-[40px] text-xs font-medium text-red-700 bg-red-50 rounded-lg cursor-pointer"
+                                >
+                                  Hapus
+                                </button>
+                              )}
                             </>
                           )}
                         </div>
@@ -999,7 +1096,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                         <th className="py-3 px-4">Kelompok & Pelatih</th>
                         <th className="py-3 px-4">Wali & Kontak</th>
                         <th className="py-3 px-4">Rekor PB</th>
-                        <th className="py-3 px-4 text-right">SPP / Bulan</th>
+                        {!isCoach && <th className="py-3 px-4 text-right">SPP / Bulan</th>}
                         <th className="py-3 px-4">Status</th>
                         <th className="py-3 px-4 text-right">Aksi</th>
                       </tr>
@@ -1028,13 +1125,20 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                             <div className="font-mono-tabular text-slate-500">
                               {ath.parentPhone || '-'}
                             </div>
+                            {!isCoach && ath.parentEmail && (
+                              <div className="text-[11px] text-sky-700 mt-0.5 truncate max-w-[190px]">
+                                {ath.parentEmail}
+                              </div>
+                            )}
                           </td>
                           <td className="py-3 px-4 font-mono-tabular text-xs font-medium text-sky-800">
                             {athletePBMap.get(ath.id) || 0} nomor PB
                           </td>
-                          <td className="py-3 px-4 text-right font-mono-tabular text-xs font-semibold text-slate-900 whitespace-nowrap">
-                            {formatRupiah(ath.monthlyFee)}
-                          </td>
+                          {!isCoach && (
+                            <td className="py-3 px-4 text-right font-mono-tabular text-xs font-semibold text-slate-900 whitespace-nowrap">
+                              {formatRupiah(ath.monthlyFee)}
+                            </td>
+                          )}
                           <td className="py-3 px-4 text-xs font-medium whitespace-nowrap">
                             <span
                               className={
@@ -1081,18 +1185,20 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                                     type="button"
                                     onClick={() => openEditAthlete(ath)}
                                     className="p-1.5 text-slate-500 hover:text-slate-900 rounded hover:bg-slate-100 cursor-pointer"
-                                    title="Edit atlet"
+                                    title={isCoach ? 'Edit catatan pelatih' : 'Edit atlet'}
                                   >
                                     <Edit3 className="w-4 h-4" />
                                   </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setConfirmDeleteAthleteId(ath.id)}
-                                    className="p-1.5 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 cursor-pointer"
-                                    title="Hapus atlet"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
+                                  {!isCoach && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setConfirmDeleteAthleteId(ath.id)}
+                                      className="p-1.5 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 cursor-pointer"
+                                      title="Hapus atlet"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  )}
                                 </>
                               )}
                             </div>
@@ -1227,7 +1333,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                           )}
                         </div>
                         <div className="inline-flex items-center gap-1.5">
-                          {confirmDeleteTimeId === st.id ? (
+                          {confirmDeleteTimeId === st.id && !isCoach ? (
                             <>
                               <button
                                 type="button"
@@ -1253,13 +1359,15 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                               >
                                 Edit
                               </button>
-                              <button
-                                type="button"
-                                onClick={() => setConfirmDeleteTimeId(st.id)}
-                                className="px-3 min-h-[40px] text-xs font-medium text-red-700 bg-red-50 rounded-lg cursor-pointer"
-                              >
-                                Hapus
-                              </button>
+                              {!isCoach && (
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmDeleteTimeId(st.id)}
+                                  className="px-3 min-h-[40px] text-xs font-medium text-red-700 bg-red-50 rounded-lg cursor-pointer"
+                                >
+                                  Hapus
+                                </button>
+                              )}
                             </>
                           )}
                         </div>
@@ -1316,7 +1424,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                           </td>
                           <td className="py-3 px-4 text-right whitespace-nowrap">
                             <div className="inline-flex items-center gap-1">
-                              {confirmDeleteTimeId === st.id ? (
+                              {confirmDeleteTimeId === st.id && !isCoach ? (
                                 <>
                                   <button
                                     type="button"
@@ -1343,14 +1451,16 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                                   >
                                     <Edit3 className="w-4 h-4" />
                                   </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setConfirmDeleteTimeId(st.id)}
-                                    className="p-1.5 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 cursor-pointer"
-                                    title="Hapus catatan waktu"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
+                                  {!isCoach && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setConfirmDeleteTimeId(st.id)}
+                                      className="p-1.5 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 cursor-pointer"
+                                      title="Hapus catatan waktu"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  )}
                                 </>
                               )}
                             </div>
@@ -1409,19 +1519,36 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                   <span className="font-semibold text-slate-900 mt-0.5 block">
                     {detailAthlete.parentName || '-'}
                   </span>
-                  <span className="font-mono-tabular text-slate-600">
+                  <span className="font-mono-tabular text-slate-600 block">
                     {detailAthlete.parentPhone || '-'}
                   </span>
+                  {!isCoach && (
+                    <span className="text-[11px] text-sky-700 mt-0.5 block break-all">
+                      {detailAthlete.parentEmail || 'Email portal wali belum diisi'}
+                    </span>
+                  )}
                 </div>
-                <div>
-                  <span className="text-slate-500 block">Iuran SPP Bulanan</span>
-                  <span className="font-mono-tabular text-sm font-bold text-slate-900 mt-0.5 block">
-                    {formatRupiah(detailAthlete.monthlyFee)}
-                  </span>
-                  <span className="font-mono-tabular text-slate-500">
-                    Lahir {formatDateID(detailAthlete.birthDate)}
-                  </span>
-                </div>
+                {!isCoach ? (
+                  <div>
+                    <span className="text-slate-500 block">Iuran SPP Bulanan</span>
+                    <span className="font-mono-tabular text-sm font-bold text-slate-900 mt-0.5 block">
+                      {formatRupiah(detailAthlete.monthlyFee)}
+                    </span>
+                    <span className="font-mono-tabular text-slate-500">
+                      Lahir {formatDateID(detailAthlete.birthDate)}
+                    </span>
+                  </div>
+                ) : (
+                  <div>
+                    <span className="text-slate-500 block">Tanggal Lahir</span>
+                    <span className="font-mono-tabular text-sm font-bold text-slate-900 mt-0.5 block">
+                      {formatDateID(detailAthlete.birthDate)}
+                    </span>
+                    <span className="text-slate-500">
+                      Status: {detailAthlete.status}
+                    </span>
+                  </div>
+                )}
               </div>
 
               {detailAthlete.notes && (
@@ -1483,44 +1610,46 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                 )}
               </div>
 
-              {/* Linked Invoices */}
-              <div>
-                <h3 className="font-display text-sm font-semibold text-slate-900 mb-3">
-                  Riwayat Tagihan & Invoice ({detailInvoices.length})
-                </h3>
-                {detailInvoices.length === 0 ? (
-                  <p className="text-xs text-slate-500">Belum ada invoice tercatat.</p>
-                ) : (
-                  <div className="divide-y divide-slate-100 border border-slate-200 rounded-lg">
-                    {detailInvoices.map((inv) => (
-                      <div key={inv.id} className="p-3 flex items-center justify-between gap-3 text-xs">
-                        <div>
-                          <div className="font-medium text-slate-900">{inv.description}</div>
-                          <div className="font-mono-tabular text-slate-500">
-                            {inv.invoiceNumber} · Jatuh tempo {formatDateID(inv.dueDate)}
+              {/* Linked Invoices (Admin Only) */}
+              {!isCoach && (
+                <div>
+                  <h3 className="font-display text-sm font-semibold text-slate-900 mb-3">
+                    Riwayat Tagihan & Invoice ({detailInvoices.length})
+                  </h3>
+                  {detailInvoices.length === 0 ? (
+                    <p className="text-xs text-slate-500">Belum ada invoice tercatat.</p>
+                  ) : (
+                    <div className="divide-y divide-slate-100 border border-slate-200 rounded-lg">
+                      {detailInvoices.map((inv) => (
+                        <div key={inv.id} className="p-3 flex items-center justify-between gap-3 text-xs">
+                          <div>
+                            <div className="font-medium text-slate-900">{inv.description}</div>
+                            <div className="font-mono-tabular text-slate-500">
+                              {inv.invoiceNumber} · Jatuh tempo {formatDateID(inv.dueDate)}
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="font-mono-tabular font-semibold text-slate-900">
+                              {formatRupiah(inv.amount)}
+                            </div>
+                            <div
+                              className={`font-medium ${
+                                inv.status === 'Lunas'
+                                  ? 'text-emerald-700'
+                                  : inv.status === 'Jatuh Tempo'
+                                  ? 'text-red-600'
+                                  : 'text-amber-700'
+                              }`}
+                            >
+                              {inv.status}
+                            </div>
                           </div>
                         </div>
-                        <div className="text-right">
-                          <div className="font-mono-tabular font-semibold text-slate-900">
-                            {formatRupiah(inv.amount)}
-                          </div>
-                          <div
-                            className={`font-medium ${
-                              inv.status === 'Lunas'
-                                ? 'text-emerald-700'
-                                : inv.status === 'Jatuh Tempo'
-                                ? 'text-red-600'
-                                : 'text-amber-700'
-                            }`}
-                          >
-                            {inv.status}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1533,7 +1662,11 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
             <div className="sm:hidden w-10 h-1 bg-slate-300 rounded-full mx-auto mb-3" />
             <div className="flex items-center justify-between pb-3 sm:pb-4 border-b border-slate-200">
               <h2 className="font-display text-base sm:text-lg font-semibold text-slate-900">
-                {editingAthlete ? 'Edit Data Atlet' : 'Tambah Atlet Baru'}
+                {isCoach
+                  ? 'Catatan Teknis & Medis Atlet'
+                  : editingAthlete
+                  ? 'Edit Data Atlet'
+                  : 'Tambah Atlet Baru'}
               </h2>
               <button
                 type="button"
@@ -1546,6 +1679,11 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
             </div>
 
             <form onSubmit={handleSaveAthlete} noValidate className="mt-5 space-y-4">
+              {isCoach && (
+                <div className="p-3 rounded-lg border border-sky-200 bg-sky-50 text-xs text-sky-900">
+                  Mode Pelatih: Anda hanya dapat memperbarui catatan spesialisasi/medis atlet. Perubahan identitas atau nominal SPP dilakukan oleh Admin Klub.
+                </div>
+              )}
               {athleteError && (
                 <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-xs text-red-800 flex items-start gap-2">
                   <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
@@ -1559,13 +1697,14 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                 </label>
                 <input
                   type="text"
+                  disabled={isCoach}
                   maxLength={LIMITS.athlete.fullNameMax}
                   value={fullName}
                   onChange={(e) => {
                     setFullName(e.target.value);
                     clearAthleteError('fullName');
                   }}
-                  className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg ${
+                  className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg disabled:bg-slate-100 disabled:text-slate-500 ${
                     athleteFieldErrors.fullName ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
                   }`}
                 />
@@ -1579,6 +1718,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                   <label className="block text-xs font-medium text-slate-700 mb-1">Gender</label>
                   <BottomSheetSelect
                     value={gender}
+                    disabled={isCoach}
                     onChange={(v) => setGender(v as AthleteGender)}
                     title="Pilih Gender Atlet"
                     options={[
@@ -1593,6 +1733,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                   </label>
                   <BottomSheetSelect
                     value={ageGroup}
+                    disabled={isCoach}
                     onChange={(v) => setAgeGroup(v as AgeGroup)}
                     title="Pilih Kelompok Umur"
                     options={AGE_GROUPS.map((g) => ({ value: g, label: g }))}
@@ -1602,6 +1743,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                   <label className="block text-xs font-medium text-slate-700 mb-1">Status</label>
                   <BottomSheetSelect
                     value={status}
+                    disabled={isCoach}
                     onChange={(v) => setStatus(v as AthleteStatus)}
                     title="Pilih Status Keaktifan Atlet"
                     options={[
@@ -1620,6 +1762,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                   </label>
                   <input
                     type="date"
+                    disabled={isCoach}
                     max={todayISO()}
                     value={birthDate}
                     onChange={(e) => {
@@ -1627,7 +1770,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                       clearAthleteError('birthDate');
                       clearAthleteError('joinDate');
                     }}
-                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm font-mono-tabular border rounded-lg ${
+                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm font-mono-tabular border rounded-lg disabled:bg-slate-100 disabled:text-slate-500 ${
                       athleteFieldErrors.birthDate ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
                     }`}
                   />
@@ -1641,13 +1784,14 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                   </label>
                   <input
                     type="date"
+                    disabled={isCoach}
                     max={todayISO()}
                     value={joinDate}
                     onChange={(e) => {
                       setJoinDate(e.target.value);
                       clearAthleteError('joinDate');
                     }}
-                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm font-mono-tabular border rounded-lg ${
+                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm font-mono-tabular border rounded-lg disabled:bg-slate-100 disabled:text-slate-500 ${
                       athleteFieldErrors.joinDate ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
                     }`}
                   />
@@ -1664,13 +1808,14 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                   </label>
                   <input
                     type="text"
+                    disabled={isCoach}
                     maxLength={LIMITS.athlete.parentNameMax}
                     value={parentName}
                     onChange={(e) => {
                       setParentName(e.target.value);
                       clearAthleteError('parentName');
                     }}
-                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg ${
+                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg disabled:bg-slate-100 disabled:text-slate-500 ${
                       athleteFieldErrors.parentName ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
                     }`}
                   />
@@ -1684,6 +1829,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                   </label>
                   <input
                     type="tel"
+                    disabled={isCoach}
                     maxLength={LIMITS.athlete.parentPhoneMax}
                     value={parentPhone}
                     onChange={(e) => {
@@ -1691,7 +1837,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                       clearAthleteError('parentPhone');
                     }}
                     placeholder="0812..."
-                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm font-mono-tabular border rounded-lg ${
+                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm font-mono-tabular border rounded-lg disabled:bg-slate-100 disabled:text-slate-500 ${
                       athleteFieldErrors.parentPhone ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
                     }`}
                   />
@@ -1701,6 +1847,33 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                 </div>
               </div>
 
+              {!isCoach && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">
+                    Email Google Wali Murid (Opsional)
+                  </label>
+                  <input
+                    type="email"
+                    maxLength={LIMITS.athlete.parentEmailMax}
+                    value={parentEmail}
+                    onChange={(e) => {
+                      setParentEmail(e.target.value);
+                      clearAthleteError('parentEmail');
+                    }}
+                    placeholder="walimurid@gmail.com"
+                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg ${
+                      athleteFieldErrors.parentEmail ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
+                    }`}
+                  />
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Mengisi email Google ini otomatis mengaktifkan akses Portal Wali Murid untuk memantau perkembangan & tagihan anak.
+                  </p>
+                  {athleteFieldErrors.parentEmail && (
+                    <p className="mt-1 text-xs text-red-600">{athleteFieldErrors.parentEmail}</p>
+                  )}
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">
@@ -1708,17 +1881,18 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                   </label>
                   <input
                     type="text"
+                    disabled={isCoach}
                     maxLength={LIMITS.athlete.coachNameMax}
                     value={coachName}
                     onChange={(e) => {
                       setCoachName(e.target.value);
                       clearAthleteError('coachName');
                     }}
-                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg ${
+                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg disabled:bg-slate-100 disabled:text-slate-500 ${
                       athleteFieldErrors.coachName ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
                     }`}
                   />
-                  {coaches.length > 0 && (
+                  {!isCoach && coaches.length > 0 && (
                     <div className="mt-1.5">
                       <BottomSheetSelect
                         value={coaches.some((c) => c.fullName === coachName) ? coachName : ''}
@@ -1743,28 +1917,30 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
                     <p className="mt-1 text-xs text-red-600">{athleteFieldErrors.coachName}</p>
                   )}
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">
-                    Iuran SPP Bulanan (Rp) <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={50000000}
-                    step={1}
-                    value={monthlyFee}
-                    onChange={(e) => {
-                      setMonthlyFee(e.target.value);
-                      clearAthleteError('monthlyFee');
-                    }}
-                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm font-mono-tabular border rounded-lg ${
-                      athleteFieldErrors.monthlyFee ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
-                    }`}
-                  />
-                  {athleteFieldErrors.monthlyFee && (
-                    <p className="mt-1 text-xs text-red-600">{athleteFieldErrors.monthlyFee}</p>
-                  )}
-                </div>
+                {!isCoach && (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">
+                      Iuran SPP Bulanan (Rp) <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={50000000}
+                      step={1}
+                      value={monthlyFee}
+                      onChange={(e) => {
+                        setMonthlyFee(e.target.value);
+                        clearAthleteError('monthlyFee');
+                      }}
+                      className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm font-mono-tabular border rounded-lg ${
+                        athleteFieldErrors.monthlyFee ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
+                      }`}
+                    />
+                    {athleteFieldErrors.monthlyFee && (
+                      <p className="mt-1 text-xs text-red-600">{athleteFieldErrors.monthlyFee}</p>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div>

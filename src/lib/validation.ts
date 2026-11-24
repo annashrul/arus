@@ -106,6 +106,10 @@ export function normalizeTextKey(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+export function normalizeEmail(value?: string | null): string {
+  return String(value ?? '').trim().toLowerCase();
+}
+
 export interface ScheduleValidationInput {
   title: string;
   sessionType: ScheduleSessionType;
@@ -330,6 +334,7 @@ export const LIMITS = {
     fullNameMax: entities.Athlete.properties.fullName.maxLength ?? 100,
     parentNameMax: entities.Athlete.properties.parentName.maxLength ?? 100,
     parentPhoneMax: entities.Athlete.properties.parentPhone.maxLength ?? 25,
+    parentEmailMax: entities.Athlete.properties.parentEmail.maxLength ?? 100,
     coachNameMax: entities.Athlete.properties.coachName.maxLength ?? 80,
     notesMax: entities.Athlete.properties.notes.maxLength ?? 400,
   },
@@ -388,6 +393,7 @@ export const LIMITS = {
     fullNameMax: entities.Coach.properties.fullName.maxLength ?? 80,
     specializationMax: entities.Coach.properties.specialization.maxLength ?? 100,
     phoneMax: entities.Coach.properties.phone.maxLength ?? 25,
+    emailMax: entities.Coach.properties.email.maxLength ?? 100,
     notesMax: entities.Coach.properties.notes.maxLength ?? 300,
   },
   pool: {
@@ -408,5 +414,18 @@ export const LIMITS = {
     locationMin: entities.Competition.properties.location.minLength ?? 2,
     locationMax: entities.Competition.properties.location.maxLength ?? 100,
     notesMax: entities.Competition.properties.notes.maxLength ?? 300,
+  },
+  clubMember: {
+    memberEmailMin: entities.ClubMember.properties.memberEmail.minLength ?? 3,
+    memberEmailMax: entities.ClubMember.properties.memberEmail.maxLength ?? 100,
+    displayNameMin: entities.ClubMember.properties.displayName.minLength ?? 2,
+    displayNameMax: entities.ClubMember.properties.displayName.maxLength ?? 100,
+    coachNameMax: entities.ClubMember.properties.coachName.maxLength ?? 80,
+    notesMax: entities.ClubMember.properties.notes.maxLength ?? 300,
+  },
+  paymentProof: {
+    payerNameMin: 2,
+    payerNameMax: entities.Invoice.properties.proofPayerName.maxLength ?? 100,
+    noteMax: entities.Invoice.properties.proofNote.maxLength ?? 300,
   },
 };

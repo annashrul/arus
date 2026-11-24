@@ -20,6 +20,7 @@ import {
   CoachStatus,
   COMPETITION_LEVELS,
   COMPETITION_STATUSES,
+  ClubAnnouncement,
   ClubCompetition,
   ClubProfile,
   CompetitionLevel,
@@ -42,14 +43,18 @@ import {
   SwimTime,
   todayISO,
   TrainingSchedule,
+  UserRole,
 } from '../types/club';
 import {
   clampString,
   FieldErrors,
   isValidBlueprintDate,
+  isValidEmailFormat,
   isValidPhoneFormat,
   LIMITS,
+  normalizeEmail,
 } from '../lib/validation';
+import { syncCoachMemberAccess } from '../lib/roleAccess';
 import {
   buildCoachesSheet,
   buildCompetitionsSheet,
@@ -69,6 +74,7 @@ import {
   Award,
   Calendar,
   Edit3,
+  FileText,
   Filter,
   MapPin,
   Package,
@@ -88,14 +94,16 @@ interface ClubOperationsViewProps {
   pools: PoolFacility[];
   equipment: EquipmentItem[];
   competitions: ClubCompetition[];
+  announcements?: ClubAnnouncement[];
   athletes?: Athlete[];
   schedules?: TrainingSchedule[];
   attendance?: AttendanceRecord[];
   swimTimes?: SwimTime[];
   onOpenPrint?: () => void;
+  userRole?: UserRole;
 }
 
-type ClubOpsTab = 'coaches' | 'pools' | 'equipment' | 'competitions';
+type ClubOpsTab = 'coaches' | 'pools' | 'equipment' | 'competitions' | 'announcements';
 
 export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
   club,
@@ -104,16 +112,34 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
   pools,
   equipment,
   competitions,
+  announcements = [],
   athletes = [],
   schedules = [],
   attendance = [],
   swimTimes = [],
   onOpenPrint,
+  userRole = 'admin',
 }) => {
-  const [activeTab, setActiveTab] = useQueryParam<ClubOpsTab>('kl_tab', 'coaches', {
-    allowed: ['coaches', 'pools', 'equipment', 'competitions'],
+  const isCoach = userRole === 'coach';
+  const [rawActiveTab, setActiveTab] = useQueryParam<ClubOpsTab>(
+    'kl_tab',
+    isCoach ? 'pools' : 'coaches',
+    {
+      allowed: ['coaches', 'pools', 'equipment', 'competitions', 'announcements'],
+      history: 'push',
+    }
+  );
+  const activeTab: ClubOpsTab = isCoach && rawActiveTab === 'coaches' ? 'pools' : rawActiveTab;
+  const [viewingAnnouncementId, setViewingAnnouncementId] = useQueryParam('kl_lihat', '', {
     history: 'push',
   });
+  const viewingAnnouncement = useMemo(
+    () =>
+      viewingAnnouncementId
+        ? announcements.find((a) => a.id === viewingAnnouncementId) || null
+        : null,
+    [announcements, viewingAnnouncementId]
+  );
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   // =========================
@@ -130,6 +156,7 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
   const [cLicense, setCLicense] = useState<CoachLicense>('Daerah (PRSI B)');
   const [cSpec, setCSpec] = useState('');
   const [cPhone, setCPhone] = useState('');
+  const [cEmail, setCEmail] = useState('');
   const [cStatus, setCStatus] = useState<CoachStatus>('Aktif');
   const [cHonor, setCHonor] = useState('2500000');
   const [cJoinDate, setCJoinDate] = useState(todayISO());
@@ -137,7 +164,7 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
   const [cSaving, setCSaving] = useState(false);
   const [cError, setCError] = useState<string | null>(null);
   const [cFieldErrors, setCFieldErrors] = useState<
-    FieldErrors<'fullName' | 'phone' | 'monthlyHonorarium' | 'joinDate' | 'notes'>
+    FieldErrors<'fullName' | 'phone' | 'email' | 'monthlyHonorarium' | 'joinDate' | 'notes'>
   >({});
 
   // =========================
@@ -221,7 +248,8 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
         return (
           c.fullName.toLowerCase().includes(q) ||
           c.role.toLowerCase().includes(q) ||
-          (c.specialization || '').toLowerCase().includes(q)
+          (c.specialization || '').toLowerCase().includes(q) ||
+          (c.email || '').toLowerCase().includes(q)
         );
       })
       .sort((a, b) => a.fullName.localeCompare(b.fullName));
@@ -360,6 +388,7 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
     setCLicense('Daerah (PRSI B)');
     setCSpec('');
     setCPhone('');
+    setCEmail('');
     setCStatus('Aktif');
     setCHonor('2500000');
     setCJoinDate(todayISO());
@@ -376,6 +405,7 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
     setCLicense(c.licenseLevel);
     setCSpec(c.specialization || '');
     setCPhone(c.phone || '');
+    setCEmail(c.email || '');
     setCStatus(c.status);
     setCHonor(String(c.monthlyHonorarium));
     setCJoinDate(c.joinDate);
@@ -391,6 +421,7 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
     const errors: typeof cFieldErrors = {};
 
     const cleanName = clampString(cName, LIMITS.coach.fullNameMax);
+    const cleanEmail = normalizeEmail(clampString(cEmail, LIMITS.coach.emailMax));
     const parsedHonor = Number(cHonor);
 
     if (cleanName.length < LIMITS.coach.fullNameMin) {
@@ -398,6 +429,9 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
     }
     if (!isValidPhoneFormat(cPhone)) {
       errors.phone = 'Format telepon tidak valid (8–16 digit angka).';
+    }
+    if (cleanEmail && !isValidEmailFormat(cleanEmail)) {
+      errors.email = 'Format email Google pelatih tidak valid.';
     }
     if (
       cHonor.trim() === '' ||
@@ -427,6 +461,7 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
       licenseLevel: cLicense,
       specialization: clampString(cSpec, LIMITS.coach.specializationMax),
       phone: clampString(cPhone, LIMITS.coach.phoneMax),
+      email: cleanEmail,
       status: cStatus,
       monthlyHonorarium: Math.round(parsedHonor),
       joinDate: cJoinDate,
@@ -435,14 +470,33 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
     };
 
     try {
+      const prevEmail = normalizeEmail(editingCoach?.email);
       if (editingCoach) {
         await updateDoc(doc(db, 'coaches', editingCoach.id), payload);
       } else {
         await addDoc(collection(db, 'coaches'), {
           ...payload,
           clubId: club.id,
-          ownerId: userId,
+          ownerId: club.ownerId || userId,
           createdAt: serverTimestamp(),
+        });
+      }
+
+      const coachAccessChanged =
+        cleanEmail !== prevEmail ||
+        (Boolean(cleanEmail) &&
+          (!editingCoach ||
+            editingCoach.status !== cStatus ||
+            editingCoach.fullName !== cleanName));
+
+      if (coachAccessChanged) {
+        await syncCoachMemberAccess({
+          club,
+          ownerId: club.ownerId || userId,
+          coachName: cleanName,
+          nextEmail: cleanEmail,
+          prevEmail,
+          coachStatus: cStatus,
         });
       }
       setCoachModalOpen(false);
@@ -544,6 +598,7 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
       } else {
         await addDoc(collection(db, 'pools'), {
           ...payload,
+          coachEmails: club.coachEmails || [],
           clubId: club.id,
           ownerId: userId,
           createdAt: serverTimestamp(),
@@ -596,6 +651,40 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
   const handleSaveEquipment = async (e: React.FormEvent) => {
     e.preventDefault();
     setEError(null);
+
+    if (isCoach) {
+      if (!editingEq) return;
+      const errors: typeof eFieldErrors = {};
+      if (!isValidBlueprintDate(eChecked)) {
+        errors.lastCheckedDate = 'Tanggal pengecekan terakhir wajib valid (YYYY-MM-DD).';
+      }
+      if (eNotes.trim().length > LIMITS.equipment.notesMax) {
+        errors.notes = `Catatan maksimal ${LIMITS.equipment.notesMax} karakter.`;
+      }
+      if (Object.keys(errors).length > 0) {
+        setEFieldErrors(errors);
+        setEError(Object.values(errors)[0] || 'Mohon periksa kondisi perlengkapan.');
+        return;
+      }
+
+      setESaving(true);
+      try {
+        await updateDoc(doc(db, 'equipment', editingEq.id), {
+          condition: eCond,
+          lastCheckedDate: eChecked,
+          notes: clampString(eNotes, LIMITS.equipment.notesMax),
+          updatedAt: serverTimestamp(),
+        });
+        setEqModalOpen(false);
+      } catch (err) {
+        setEError('Gagal memperbarui kondisi perlengkapan.');
+        handleFirestoreError(err, OperationType.UPDATE, `equipment/${editingEq.id}`);
+      } finally {
+        setESaving(false);
+      }
+      return;
+    }
+
     const errors: typeof eFieldErrors = {};
 
     const cleanName = clampString(eName, LIMITS.equipment.itemNameMax);
@@ -638,6 +727,7 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
       } else {
         await addDoc(collection(db, 'equipment'), {
           ...payload,
+          coachEmails: club.coachEmails || [],
           clubId: club.id,
           ownerId: userId,
           createdAt: serverTimestamp(),
@@ -752,6 +842,8 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
       } else {
         await addDoc(collection(db, 'competitions'), {
           ...payload,
+          coachEmails: club.coachEmails || [],
+          parentEmails: club.parentEmails || [],
           clubId: club.id,
           ownerId: userId,
           createdAt: serverTimestamp(),
@@ -782,7 +874,7 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
 
   // Exports per active tab
   const handleExportCSV = () => {
-    if (activeTab === 'coaches') {
+    if (activeTab === 'coaches' && !isCoach) {
       const sheet = buildCoachesSheet(filteredCoaches);
       downloadCSV(
         `pelatih-${club.name.toLowerCase().replace(/\s+/g, '-')}-${todayISO()}.csv`,
@@ -800,19 +892,23 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
         ])
       );
     } else if (activeTab === 'pools') {
-      const sheet = buildPoolsSheet(filteredPools);
+      const sheet = buildPoolsSheet(filteredPools, { hideFinancial: isCoach });
       downloadCSV(
         `kolam-${club.name.toLowerCase().replace(/\s+/g, '-')}-${todayISO()}.csv`,
         sheet.headers,
-        filteredPools.map((p) => [
-          p.name,
-          p.poolType,
-          p.laneCount,
-          p.address || '-',
-          p.rentalCostPerSession,
-          p.status,
-          p.notes || '-',
-        ])
+        filteredPools.map((p) =>
+          isCoach
+            ? [p.name, p.poolType, p.laneCount, p.address || '-', p.status, p.notes || '-']
+            : [
+                p.name,
+                p.poolType,
+                p.laneCount,
+                p.address || '-',
+                p.rentalCostPerSession,
+                p.status,
+                p.notes || '-',
+              ]
+        )
       );
     } else if (activeTab === 'equipment') {
       const sheet = buildEquipmentSheet(filteredEquipment);
@@ -830,27 +926,40 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
         ])
       );
     } else {
-      const sheet = buildCompetitionsSheet(filteredCompetitions);
+      const sheet = buildCompetitionsSheet(filteredCompetitions, { hideFinancial: isCoach });
       downloadCSV(
         `kejuaraan-${club.name.toLowerCase().replace(/\s+/g, '-')}-${todayISO()}.csv`,
         sheet.headers,
-        filteredCompetitions.map((k) => [
-          k.name,
-          k.level,
-          k.startDate,
-          k.endDate,
-          k.location,
-          k.poolCourse,
-          k.registrationFee,
-          k.status,
-          k.notes || '-',
-        ])
+        filteredCompetitions.map((k) =>
+          isCoach
+            ? [
+                k.name,
+                k.level,
+                k.startDate,
+                k.endDate,
+                k.location,
+                k.poolCourse,
+                k.status,
+                k.notes || '-',
+              ]
+            : [
+                k.name,
+                k.level,
+                k.startDate,
+                k.endDate,
+                k.location,
+                k.poolCourse,
+                k.registrationFee,
+                k.status,
+                k.notes || '-',
+              ]
+        )
       );
     }
   };
 
   const handleExportExcel = () => {
-    if (activeTab === 'coaches') {
+    if (activeTab === 'coaches' && !isCoach) {
       downloadExcelWorkbook(
         `pelatih-${club.name.toLowerCase().replace(/\s+/g, '-')}-${todayISO()}.xlsx`,
         [buildCoachesSheet(filteredCoaches)]
@@ -858,7 +967,7 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
     } else if (activeTab === 'pools') {
       downloadExcelWorkbook(
         `kolam-${club.name.toLowerCase().replace(/\s+/g, '-')}-${todayISO()}.xlsx`,
-        [buildPoolsSheet(filteredPools)]
+        [buildPoolsSheet(filteredPools, { hideFinancial: isCoach })]
       );
     } else if (activeTab === 'equipment') {
       downloadExcelWorkbook(
@@ -868,7 +977,7 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
     } else {
       downloadExcelWorkbook(
         `kejuaraan-${club.name.toLowerCase().replace(/\s+/g, '-')}-${todayISO()}.xlsx`,
-        [buildCompetitionsSheet(filteredCompetitions)]
+        [buildCompetitionsSheet(filteredCompetitions, { hideFinancial: isCoach })]
       );
     }
   };
@@ -895,47 +1004,56 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="font-display text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
-            Pelatih, Fasilitas & Agenda Lomba
+            {isCoach ? 'Fasilitas, Perlengkapan & Lomba' : 'Pelatih, Fasilitas & Agenda Lomba'}
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            Kelola tim pelatih, kolam latihan, inventaris perlengkapan, dan target kejuaraan klub.
+            {isCoach
+              ? 'Pantau kolam latihan, cek kondisi perlengkapan, kalender kejuaraan, dan pengumuman resmi klub.'
+              : 'Kelola tim pelatih, kolam latihan, inventaris perlengkapan, dan target kejuaraan klub.'}
           </p>
         </div>
 
-        <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 shrink-0">
+        <div className={`${isCoach ? 'flex' : 'grid grid-cols-2 sm:flex'} sm:flex-wrap items-center gap-2 shrink-0`}>
           <ExportActionMenu
             label="Ekspor & Cetak"
             options={[
               {
                 id: 'ops-pdf',
                 label: 'Download PDF (.pdf)',
-                description: 'Rekap pelatih, fasilitas kolam, inventaris & lomba',
+                description: isCoach
+                  ? 'Rekap fasilitas kolam, inventaris & lomba'
+                  : 'Rekap pelatih, fasilitas kolam, inventaris & lomba',
                 format: 'pdf',
                 onSelect: () =>
                   downloadClubSummaryPdf({
                     kind: 'clubops',
                     club,
-                    coaches: filteredCoaches,
+                    coaches: isCoach ? [] : filteredCoaches,
                     pools: filteredPools,
                     equipment: filteredEquipment,
                     competitions: filteredCompetitions,
                     periodLabel: 'Sesuai Filter Aktif',
+                    hideFinancial: isCoach,
                   }),
               },
-              {
-                id: `${activeTab}-excel`,
-                label: 'Ekspor Excel (.xlsx)',
-                description: 'Unduh data tab aktif dalam format spreadsheet',
-                format: 'excel',
-                onSelect: handleExportExcel,
-              },
-              {
-                id: `${activeTab}-csv`,
-                label: 'Ekspor CSV (.csv)',
-                description: 'Format tabel standar untuk olah data cepat',
-                format: 'csv',
-                onSelect: handleExportCSV,
-              },
+              ...(activeTab !== 'announcements'
+                ? [
+                    {
+                      id: `${activeTab}-excel`,
+                      label: 'Ekspor Excel (.xlsx)',
+                      description: 'Unduh data tab aktif dalam format spreadsheet',
+                      format: 'excel' as const,
+                      onSelect: handleExportExcel,
+                    },
+                    {
+                      id: `${activeTab}-csv`,
+                      label: 'Ekspor CSV (.csv)',
+                      description: 'Format tabel standar untuk olah data cepat',
+                      format: 'csv' as const,
+                      onSelect: handleExportCSV,
+                    },
+                  ]
+                : []),
               ...(onOpenPrint
                 ? [
                     {
@@ -950,26 +1068,35 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
                 : []),
             ]}
           />
-          <button
-            type="button"
-            onClick={primaryAction}
-            className="inline-flex items-center justify-center gap-2 px-4 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 whitespace-nowrap shrink-0 cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            {primaryButtonLabel}
-          </button>
+          {!isCoach && (
+            <button
+              type="button"
+              onClick={primaryAction}
+              className="inline-flex items-center justify-center gap-2 px-4 min-h-[44px] sm:min-h-[36px] text-xs font-medium text-white bg-sky-700 rounded-lg hover:bg-sky-800 whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              {primaryButtonLabel}
+            </button>
+          )}
         </div>
       </div>
 
       {/* Sub-Tabs */}
       <div className="grid grid-cols-2 sm:inline-flex gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200/80">
         {(
-          [
-            { id: 'coaches', label: 'Pelatih & Staf', count: coaches.length, icon: UserCheck },
-            { id: 'pools', label: 'Kolam & Fasilitas', count: pools.length, icon: Waves },
-            { id: 'equipment', label: 'Perlengkapan', count: equipment.length, icon: Package },
-            { id: 'competitions', label: 'Kalender Lomba', count: competitions.length, icon: Trophy },
-          ] as const
+          isCoach
+            ? ([
+                { id: 'pools', label: 'Kolam & Fasilitas', count: pools.length, icon: Waves },
+                { id: 'equipment', label: 'Perlengkapan', count: equipment.length, icon: Package },
+                { id: 'competitions', label: 'Kalender Lomba', count: competitions.length, icon: Trophy },
+                { id: 'announcements', label: 'Pengumuman', count: announcements.length, icon: FileText },
+              ] as const)
+            : ([
+                { id: 'coaches', label: 'Pelatih & Staf', count: coaches.length, icon: UserCheck },
+                { id: 'pools', label: 'Kolam & Fasilitas', count: pools.length, icon: Waves },
+                { id: 'equipment', label: 'Perlengkapan', count: equipment.length, icon: Package },
+                { id: 'competitions', label: 'Kalender Lomba', count: competitions.length, icon: Trophy },
+              ] as const)
         ).map((tab) => {
           const Icon = tab.icon;
           const active = activeTab === tab.id;
@@ -998,7 +1125,7 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
       {/* ======================================================= */}
       {/* TAB 1: COACHES                                          */}
       {/* ======================================================= */}
-      {activeTab === 'coaches' && (
+      {!isCoach && activeTab === 'coaches' && (
         <div className="space-y-4">
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
             <div className="bg-white border border-slate-200 rounded-xl p-4">
@@ -1098,6 +1225,12 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
                     {c.specialization && (
                       <p className="text-xs text-slate-600">{c.specialization}</p>
                     )}
+                    {(c.phone || c.email) && (
+                      <div className="text-xs text-slate-500 space-y-0.5">
+                        {c.phone && <div className="font-mono-tabular">{c.phone}</div>}
+                        {c.email && <div className="text-sky-700 truncate">{c.email}</div>}
+                      </div>
+                    )}
                     <div className="flex items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-100">
                       <span className="font-mono-tabular font-semibold text-slate-900">
                         {formatRupiah(c.monthlyHonorarium)}/bln
@@ -1140,7 +1273,7 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
                     <tr className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-600">
                       <th className="py-3 px-4">Pelatih & Spesialisasi</th>
                       <th className="py-3 px-4">Peran & Lisensi</th>
-                      <th className="py-3 px-4">Telepon</th>
+                      <th className="py-3 px-4">Kontak & Email</th>
                       <th className="py-3 px-4 text-right">Honorarium / Bln</th>
                       <th className="py-3 px-4">Status</th>
                       <th className="py-3 px-4 text-right">Aksi</th>
@@ -1159,8 +1292,13 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
                           <div className="font-medium text-slate-800">{c.role}</div>
                           <div className="text-slate-500 mt-0.5">{c.licenseLevel}</div>
                         </td>
-                        <td className="py-3 px-4 font-mono-tabular text-slate-600">
-                          {c.phone || '-'}
+                        <td className="py-3 px-4 text-slate-600">
+                          <div className="font-mono-tabular">{c.phone || '-'}</div>
+                          {c.email && (
+                            <div className="text-[11px] text-sky-700 mt-0.5 truncate max-w-[190px]">
+                              {c.email}
+                            </div>
+                          )}
                         </td>
                         <td className="py-3 px-4 text-right font-mono-tabular font-semibold text-slate-900">
                           {formatRupiah(c.monthlyHonorarium)}
@@ -1343,37 +1481,39 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
                     {p.notes && <p className="text-xs text-slate-500 pt-1">{p.notes}</p>}
                   </div>
 
-                  <div className="flex items-center justify-between pt-3 border-t border-slate-100 text-xs">
-                    <span className="font-mono-tabular font-semibold text-slate-900">
-                      Sewa: {formatRupiah(p.rentalCostPerSession)}/sesi
-                    </span>
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => openEditPool(p)}
-                        className="px-2.5 min-h-[36px] text-xs font-medium text-sky-700 hover:bg-sky-50 rounded-lg cursor-pointer"
-                      >
-                        Edit
-                      </button>
-                      {confirmDeleteId === p.id ? (
+                  {!isCoach && (
+                    <div className="flex items-center justify-between pt-3 border-t border-slate-100 text-xs">
+                      <span className="font-mono-tabular font-semibold text-slate-900">
+                        Sewa: {formatRupiah(p.rentalCostPerSession)}/sesi
+                      </span>
+                      <div className="flex items-center gap-1">
                         <button
                           type="button"
-                          onClick={() => handleDelete('pools', p.id)}
-                          className="px-2.5 min-h-[36px] text-xs font-semibold text-white bg-red-600 rounded-lg cursor-pointer"
+                          onClick={() => openEditPool(p)}
+                          className="px-2.5 min-h-[36px] text-xs font-medium text-sky-700 hover:bg-sky-50 rounded-lg cursor-pointer"
                         >
-                          Yakin?
+                          Edit
                         </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setConfirmDeleteId(p.id)}
-                          className="px-2.5 min-h-[36px] text-xs font-medium text-red-600 hover:bg-red-50 rounded-lg cursor-pointer"
-                        >
-                          Hapus
-                        </button>
-                      )}
+                        {confirmDeleteId === p.id ? (
+                          <button
+                            type="button"
+                            onClick={() => handleDelete('pools', p.id)}
+                            className="px-2.5 min-h-[36px] text-xs font-semibold text-white bg-red-600 rounded-lg cursor-pointer"
+                          >
+                            Yakin?
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteId(p.id)}
+                            className="px-2.5 min-h-[36px] text-xs font-medium text-red-600 hover:bg-red-50 rounded-lg cursor-pointer"
+                          >
+                            Hapus
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -1500,24 +1640,26 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
                         onClick={() => openEditEquipment(item)}
                         className="px-2.5 min-h-[36px] text-xs font-medium text-sky-700 hover:bg-sky-50 rounded-lg cursor-pointer"
                       >
-                        Edit
+                        {isCoach ? 'Cek Kondisi' : 'Edit'}
                       </button>
-                      {confirmDeleteId === item.id ? (
-                        <button
-                          type="button"
-                          onClick={() => handleDelete('equipment', item.id)}
-                          className="px-2.5 min-h-[36px] text-xs font-semibold text-white bg-red-600 rounded-lg cursor-pointer"
-                        >
-                          Yakin?
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setConfirmDeleteId(item.id)}
-                          className="px-2.5 min-h-[36px] text-xs font-medium text-red-600 hover:bg-red-50 rounded-lg cursor-pointer"
-                        >
-                          Hapus
-                        </button>
+                      {!isCoach && (
+                        confirmDeleteId === item.id ? (
+                          <button
+                            type="button"
+                            onClick={() => handleDelete('equipment', item.id)}
+                            className="px-2.5 min-h-[36px] text-xs font-semibold text-white bg-red-600 rounded-lg cursor-pointer"
+                          >
+                            Yakin?
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteId(item.id)}
+                            className="px-2.5 min-h-[36px] text-xs font-medium text-red-600 hover:bg-red-50 rounded-lg cursor-pointer"
+                          >
+                            Hapus
+                          </button>
+                        )
                       )}
                     </div>
                   </div>
@@ -1569,27 +1711,30 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
                               type="button"
                               onClick={() => openEditEquipment(item)}
                               className="p-1.5 text-slate-500 hover:text-sky-700 rounded-md cursor-pointer"
-                              aria-label={`Edit ${item.itemName}`}
+                              aria-label={isCoach ? `Cek kondisi ${item.itemName}` : `Edit ${item.itemName}`}
+                              title={isCoach ? 'Cek kondisi perlengkapan' : 'Edit perlengkapan'}
                             >
                               <Edit3 className="w-4 h-4" />
                             </button>
-                            {confirmDeleteId === item.id ? (
-                              <button
-                                type="button"
-                                onClick={() => handleDelete('equipment', item.id)}
-                                className="px-2 py-1 text-[11px] font-semibold text-white bg-red-600 rounded cursor-pointer"
-                              >
-                                Yakin?
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => setConfirmDeleteId(item.id)}
-                                className="p-1.5 text-slate-400 hover:text-red-600 rounded-md cursor-pointer"
-                                aria-label={`Hapus ${item.itemName}`}
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                            {!isCoach && (
+                              confirmDeleteId === item.id ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDelete('equipment', item.id)}
+                                  className="px-2 py-1 text-[11px] font-semibold text-white bg-red-600 rounded cursor-pointer"
+                                >
+                                  Yakin?
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmDeleteId(item.id)}
+                                  className="p-1.5 text-slate-400 hover:text-red-600 rounded-md cursor-pointer"
+                                  aria-label={`Hapus ${item.itemName}`}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )
                             )}
                           </div>
                         </td>
@@ -1726,7 +1871,7 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
                     </div>
                     <div className="text-xs text-slate-500">
                       Lokasi: {k.location}
-                      {k.registrationFee > 0 && (
+                      {!isCoach && k.registrationFee > 0 && (
                         <>
                           {' · '}Biaya/nomor:{' '}
                           <span className="font-mono-tabular font-medium text-slate-800">
@@ -1738,32 +1883,34 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
                     {k.notes && <p className="text-xs text-slate-500 pt-1">{k.notes}</p>}
                   </div>
 
-                  <div className="flex items-center justify-end gap-1 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
-                    <button
-                      type="button"
-                      onClick={() => openEditComp(k)}
-                      className="px-3 min-h-[38px] text-xs font-medium text-sky-700 hover:bg-sky-50 rounded-lg cursor-pointer"
-                    >
-                      Edit
-                    </button>
-                    {confirmDeleteId === k.id ? (
+                  {!isCoach && (
+                    <div className="flex items-center justify-end gap-1 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
                       <button
                         type="button"
-                        onClick={() => handleDelete('competitions', k.id)}
-                        className="px-3 min-h-[38px] text-xs font-semibold text-white bg-red-600 rounded-lg cursor-pointer"
+                        onClick={() => openEditComp(k)}
+                        className="px-3 min-h-[38px] text-xs font-medium text-sky-700 hover:bg-sky-50 rounded-lg cursor-pointer"
                       >
-                        Yakin?
+                        Edit
                       </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => setConfirmDeleteId(k.id)}
-                        className="px-3 min-h-[38px] text-xs font-medium text-red-600 hover:bg-red-50 rounded-lg cursor-pointer"
-                      >
-                        Hapus
-                      </button>
-                    )}
-                  </div>
+                      {confirmDeleteId === k.id ? (
+                        <button
+                          type="button"
+                          onClick={() => handleDelete('competitions', k.id)}
+                          className="px-3 min-h-[38px] text-xs font-semibold text-white bg-red-600 rounded-lg cursor-pointer"
+                        >
+                          Yakin?
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteId(k.id)}
+                          className="px-3 min-h-[38px] text-xs font-medium text-red-600 hover:bg-red-50 rounded-lg cursor-pointer"
+                        >
+                          Hapus
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -1778,6 +1925,102 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
               />
             </div>
             </>
+          )}
+        </div>
+      )}
+
+      {/* ======================================================= */}
+      {/* TAB 5: ANNOUNCEMENTS (READ-ONLY FOR COACH)              */}
+      {/* ======================================================= */}
+      {activeTab === 'announcements' && (
+        <div className="space-y-4">
+          {announcements.length === 0 ? (
+            <div className="bg-white border border-slate-200 rounded-xl p-10 text-center space-y-2">
+              <FileText className="w-8 h-8 text-slate-300 mx-auto" />
+              <p className="text-sm font-semibold text-slate-900">Belum ada pengumuman klub</p>
+              <p className="text-xs text-slate-500">
+                Surat resmi dan pengumuman yang diterbitkan Admin Klub akan tampil di sini.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {announcements.map((ann) => (
+                <div
+                  key={ann.id}
+                  className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 flex flex-col justify-between gap-3"
+                >
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-2 text-xs text-slate-500">
+                      <span className="font-semibold text-sky-700">{ann.docType}</span>
+                      {ann.eventDate && (
+                        <span className="font-mono-tabular">{formatDateID(ann.eventDate)}</span>
+                      )}
+                    </div>
+                    <h3 className="font-display text-sm sm:text-base font-semibold text-slate-900">
+                      {ann.title}
+                    </h3>
+                    <div className="text-[11px] text-slate-500">
+                      Oleh: {ann.authorName}
+                    </div>
+                    <p className="text-xs text-slate-600 line-clamp-3 whitespace-pre-line">
+                      {ann.content}
+                    </p>
+                  </div>
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+                    <span className="text-slate-500">
+                      Sasaran: {ann.targetGroup || 'Semua Anggota'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setViewingAnnouncementId(ann.id)}
+                      className="font-medium text-sky-700 hover:text-sky-800 cursor-pointer"
+                    >
+                      Baca Lengkap
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {viewingAnnouncement && (
+            <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-[1px] flex items-end sm:items-center justify-center p-0 sm:p-4">
+              <div className="bg-white border border-slate-200 rounded-t-2xl sm:rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-4 sm:p-6 pb-safe space-y-4">
+                <div className="sm:hidden w-10 h-1 bg-slate-300 rounded-full mx-auto" />
+                <div className="flex items-start justify-between gap-3 pb-3 border-b border-slate-200">
+                  <div>
+                    <div className="text-xs font-semibold text-sky-700">
+                      {viewingAnnouncement.docType}
+                    </div>
+                    <h2 className="font-display text-base sm:text-lg font-bold text-slate-900 mt-0.5">
+                      {viewingAnnouncement.title}
+                    </h2>
+                    <div className="text-xs text-slate-500 mt-0.5">
+                      Oleh: {viewingAnnouncement.authorName}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setViewingAnnouncementId('')}
+                    className="p-2 text-slate-400 hover:text-slate-700 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
+                    aria-label="Tutup pengumuman"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                <div className="text-xs sm:text-sm text-slate-700 whitespace-pre-line leading-relaxed">
+                  {viewingAnnouncement.content}
+                </div>
+                <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+                  <span>Sasaran: {viewingAnnouncement.targetGroup || 'Semua Anggota'}</span>
+                  {viewingAnnouncement.eventDate && (
+                    <span className="font-mono-tabular">
+                      Tanggal: {formatDateID(viewingAnnouncement.eventDate)}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
           )}
         </div>
       )}
@@ -1898,6 +2141,31 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
                     options={COACH_STATUSES.map((s) => ({ value: s, label: s }))}
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Email Google Pelatih (Opsional)
+                </label>
+                <input
+                  type="email"
+                  maxLength={LIMITS.coach.emailMax}
+                  value={cEmail}
+                  onChange={(e) => {
+                    setCEmail(e.target.value);
+                    setCFieldErrors((p) => ({ ...p, email: undefined }));
+                  }}
+                  placeholder="pelatih@gmail.com"
+                  className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg ${
+                    cFieldErrors.email ? 'border-red-400 bg-red-50/40' : 'border-slate-200'
+                  }`}
+                />
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Mengisi email Google ini otomatis mengaktifkan akses login Pelatih (jadwal, presensi, waktu renang, dan catatan atlet).
+                </p>
+                {cFieldErrors.email && (
+                  <p className="text-[11px] text-red-600 mt-1">{cFieldErrors.email}</p>
+                )}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -2151,7 +2419,11 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
             <div className="sm:hidden w-10 h-1 bg-slate-300 rounded-full mx-auto mb-3" />
             <div className="flex items-center justify-between pb-3 border-b border-slate-200">
               <h2 className="font-display text-base sm:text-lg font-semibold text-slate-900">
-                {editingEq ? 'Edit Inventaris Perlengkapan' : 'Tambah Perlengkapan Klub'}
+                {isCoach
+                  ? 'Cek Kondisi Perlengkapan'
+                  : editingEq
+                  ? 'Edit Inventaris Perlengkapan'
+                  : 'Tambah Perlengkapan Klub'}
               </h2>
               <button
                 type="button"
@@ -2164,6 +2436,11 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
             </div>
 
             <form onSubmit={handleSaveEquipment} noValidate className="mt-4 space-y-3.5">
+              {isCoach && (
+                <div className="p-3 rounded-lg border border-sky-200 bg-sky-50 text-xs text-sky-900">
+                  Mode Pelatih: Anda dapat memperbarui kondisi barang, tanggal pengecekan terakhir, dan catatan kondisi perlengkapan.
+                </div>
+              )}
               {eError && (
                 <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-xs text-red-800 flex items-start gap-2">
                   <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
@@ -2177,6 +2454,7 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
                 </label>
                 <input
                   type="text"
+                  disabled={isCoach}
                   maxLength={LIMITS.equipment.itemNameMax}
                   value={eName}
                   onChange={(e) => {
@@ -2184,7 +2462,7 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
                     setEFieldErrors((p) => ({ ...p, itemName: undefined }));
                   }}
                   placeholder="Contoh: Kickboard & Pullbuoy Set"
-                  className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg ${
+                  className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg disabled:bg-slate-100 disabled:text-slate-500 ${
                     eFieldErrors.itemName ? 'border-red-400 bg-red-50/40' : 'border-slate-200'
                   }`}
                 />
@@ -2198,6 +2476,7 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
                   <label className="block text-xs font-medium text-slate-700 mb-1">Kategori</label>
                   <BottomSheetSelect
                     value={eCat}
+                    disabled={isCoach}
                     onChange={(v) => setECat(v as EquipmentCategory)}
                     title="Pilih Kategori Perlengkapan"
                     options={EQUIPMENT_CATEGORIES.map((c) => ({ value: c, label: c }))}
@@ -2221,6 +2500,7 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
                   </label>
                   <input
                     type="number"
+                    disabled={isCoach}
                     min="0"
                     max="10000"
                     value={eQty}
@@ -2228,7 +2508,7 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
                       setEQty(e.target.value);
                       setEFieldErrors((p) => ({ ...p, quantity: undefined }));
                     }}
-                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm font-mono-tabular border rounded-lg ${
+                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm font-mono-tabular border rounded-lg disabled:bg-slate-100 disabled:text-slate-500 ${
                       eFieldErrors.quantity ? 'border-red-400 bg-red-50/40' : 'border-slate-200'
                     }`}
                   />
@@ -2265,11 +2545,12 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
                 </label>
                 <input
                   type="text"
+                  disabled={isCoach}
                   maxLength={LIMITS.equipment.locationMax}
                   value={eLoc}
                   onChange={(e) => setELoc(e.target.value)}
                   placeholder="Gudang Kolam Pajajaran (Loker A)"
-                  className="w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border border-slate-200 rounded-lg"
+                  className="w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border border-slate-200 rounded-lg disabled:bg-slate-100 disabled:text-slate-500"
                 />
               </div>
 

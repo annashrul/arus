@@ -643,33 +643,63 @@ export function buildFinanceSheet(transactions: FinanceTransaction[]): ExcelShee
   };
 }
 
-export function buildAthletesSheet(athletes: Athlete[]): ExcelSheet {
+export function buildAthletesSheet(
+  athletes: Athlete[],
+  options?: { hideFinancial?: boolean }
+): ExcelSheet {
+  const hideFinancial = options?.hideFinancial ?? false;
   return {
     name: 'Daftar Atlet',
-    headers: [
-      'Nama Lengkap',
-      'Gender',
-      'Tanggal Lahir',
-      'Kelompok Umur',
-      'Status',
-      'Nama Wali',
-      'Telepon Wali',
-      'Pelatih',
-      'SPP Bulanan (IDR)',
-      'Tanggal Gabung',
-    ],
-    rows: athletes.map((a) => [
-      a.fullName,
-      a.gender,
-      a.birthDate,
-      a.ageGroup,
-      a.status,
-      a.parentName || '-',
-      a.parentPhone || '-',
-      a.coachName || '-',
-      { value: a.monthlyFee, type: 'Number', styleId: 'Currency' },
-      a.joinDate,
-    ]),
+    headers: hideFinancial
+      ? [
+          'Nama Lengkap',
+          'Gender',
+          'Tanggal Lahir',
+          'Kelompok Umur',
+          'Status',
+          'Nama Wali',
+          'Telepon Wali',
+          'Pelatih',
+          'Tanggal Gabung',
+        ]
+      : [
+          'Nama Lengkap',
+          'Gender',
+          'Tanggal Lahir',
+          'Kelompok Umur',
+          'Status',
+          'Nama Wali',
+          'Telepon Wali',
+          'Pelatih',
+          'SPP Bulanan (IDR)',
+          'Tanggal Gabung',
+        ],
+    rows: athletes.map((a) =>
+      hideFinancial
+        ? [
+            a.fullName,
+            a.gender,
+            a.birthDate,
+            a.ageGroup,
+            a.status,
+            a.parentName || '-',
+            a.parentPhone || '-',
+            a.coachName || '-',
+            a.joinDate,
+          ]
+        : [
+            a.fullName,
+            a.gender,
+            a.birthDate,
+            a.ageGroup,
+            a.status,
+            a.parentName || '-',
+            a.parentPhone || '-',
+            a.coachName || '-',
+            { value: a.monthlyFee, type: 'Number', styleId: 'Currency' },
+            a.joinDate,
+          ]
+    ),
   };
 }
 
@@ -818,27 +848,44 @@ export function buildCoachesSheet(coaches: Coach[]): ExcelSheet {
   };
 }
 
-export function buildPoolsSheet(pools: PoolFacility[]): ExcelSheet {
+export function buildPoolsSheet(
+  pools: PoolFacility[],
+  options?: { hideFinancial?: boolean }
+): ExcelSheet {
+  const hideFinancial = options?.hideFinancial ?? false;
   return {
     name: 'Kolam & Fasilitas',
-    headers: [
-      'Nama Kolam / Fasilitas',
-      'Tipe',
-      'Jumlah Lintasan',
-      'Alamat',
-      'Biaya Sewa/Sesi (IDR)',
-      'Status',
-      'Catatan',
-    ],
-    rows: pools.map((p) => [
-      p.name,
-      p.poolType,
-      { value: p.laneCount, type: 'Number' },
-      p.address || '-',
-      { value: p.rentalCostPerSession, type: 'Number', styleId: 'Currency' },
-      p.status,
-      p.notes || '-',
-    ]),
+    headers: hideFinancial
+      ? ['Nama Kolam / Fasilitas', 'Tipe', 'Jumlah Lintasan', 'Alamat', 'Status', 'Catatan']
+      : [
+          'Nama Kolam / Fasilitas',
+          'Tipe',
+          'Jumlah Lintasan',
+          'Alamat',
+          'Biaya Sewa/Sesi (IDR)',
+          'Status',
+          'Catatan',
+        ],
+    rows: pools.map((p) =>
+      hideFinancial
+        ? [
+            p.name,
+            p.poolType,
+            { value: p.laneCount, type: 'Number' },
+            p.address || '-',
+            p.status,
+            p.notes || '-',
+          ]
+        : [
+            p.name,
+            p.poolType,
+            { value: p.laneCount, type: 'Number' },
+            p.address || '-',
+            { value: p.rentalCostPerSession, type: 'Number', styleId: 'Currency' },
+            p.status,
+            p.notes || '-',
+          ]
+    ),
   };
 }
 
@@ -866,31 +913,59 @@ export function buildEquipmentSheet(equipment: EquipmentItem[]): ExcelSheet {
   };
 }
 
-export function buildCompetitionsSheet(competitions: ClubCompetition[]): ExcelSheet {
+export function buildCompetitionsSheet(
+  competitions: ClubCompetition[],
+  options?: { hideFinancial?: boolean }
+): ExcelSheet {
+  const hideFinancial = options?.hideFinancial ?? false;
   return {
     name: 'Kalender Kejuaraan',
-    headers: [
-      'Nama Kejuaraan',
-      'Tingkat',
-      'Tanggal Mulai',
-      'Tanggal Selesai',
-      'Lokasi',
-      'Kolam',
-      'Biaya Registrasi (IDR)',
-      'Status',
-      'Catatan',
-    ],
-    rows: competitions.map((comp) => [
-      comp.name,
-      comp.level,
-      comp.startDate,
-      comp.endDate,
-      comp.location,
-      comp.poolCourse,
-      { value: comp.registrationFee, type: 'Number', styleId: 'Currency' },
-      comp.status,
-      comp.notes || '-',
-    ]),
+    headers: hideFinancial
+      ? [
+          'Nama Kejuaraan',
+          'Tingkat',
+          'Tanggal Mulai',
+          'Tanggal Selesai',
+          'Lokasi',
+          'Kolam',
+          'Status',
+          'Catatan',
+        ]
+      : [
+          'Nama Kejuaraan',
+          'Tingkat',
+          'Tanggal Mulai',
+          'Tanggal Selesai',
+          'Lokasi',
+          'Kolam',
+          'Biaya Registrasi (IDR)',
+          'Status',
+          'Catatan',
+        ],
+    rows: competitions.map((comp) =>
+      hideFinancial
+        ? [
+            comp.name,
+            comp.level,
+            comp.startDate,
+            comp.endDate,
+            comp.location,
+            comp.poolCourse,
+            comp.status,
+            comp.notes || '-',
+          ]
+        : [
+            comp.name,
+            comp.level,
+            comp.startDate,
+            comp.endDate,
+            comp.location,
+            comp.poolCourse,
+            { value: comp.registrationFee, type: 'Number', styleId: 'Currency' },
+            comp.status,
+            comp.notes || '-',
+          ]
+    ),
   };
 }
 
@@ -907,8 +982,10 @@ export function downloadFullClubExcel(
     pools?: PoolFacility[];
     equipment?: EquipmentItem[];
     competitions?: ClubCompetition[];
+    hideFinancial?: boolean;
   }
 ): void {
+  const hideFinancial = data.hideFinancial ?? false;
   let income = 0;
   let expense = 0;
   for (const tx of data.transactions) {
@@ -923,42 +1000,61 @@ export function downloadFullClubExcel(
   );
   const unpaidTotal = unpaid.reduce((acc, i) => acc + i.amount, 0);
 
+  const summaryRows: ExcelSheet['rows'] = [
+    ['Nama Klub', club.name],
+    ['Kota', club.city],
+    ['Kepala Pelatih', club.headCoach],
+    ['Tanggal Ekspor', formatDateID(todayISO())],
+    ['Total Atlet Terdaftar', { value: data.athletes.length, type: 'Number' }],
+    ['Atlet Berstatus Aktif', { value: data.athletes.filter((a) => a.status === 'Aktif').length, type: 'Number' }],
+    ...(!hideFinancial
+      ? [['Pelatih & Staf Terdaftar', { value: data.coaches?.length ?? 0, type: 'Number' }] as ExcelSheet['rows'][number]]
+      : []),
+    ['Fasilitas Kolam', { value: data.pools?.length ?? 0, type: 'Number' }],
+    ['Target Kejuaraan', { value: data.competitions?.length ?? 0, type: 'Number' }],
+    ['Catatan Waktu PB', { value: data.swimTimes.filter((s) => s.isPersonalBest).length, type: 'Number' }],
+    ...(!hideFinancial
+      ? ([
+          ['Total Pemasukan Kas', formatRupiah(income)],
+          ['Total Pengeluaran Kas', formatRupiah(expense)],
+          ['Saldo Kas Bersih', formatRupiah(income - expense)],
+          ['Tagihan Belum Lunas / Tempo', `${unpaid.length} invoice (${formatRupiah(unpaidTotal)})`],
+        ] as ExcelSheet['rows'])
+      : []),
+    ['Jadwal Sesi Latihan', { value: data.schedules.length, type: 'Number' }],
+  ];
+
   const summarySheet: ExcelSheet = {
     name: 'Ringkasan Klub',
     headers: ['Indikator Manajemen Klub', 'Nilai / Keterangan'],
-    rows: [
-      ['Nama Klub', club.name],
-      ['Kota', club.city],
-      ['Kepala Pelatih', club.headCoach],
-      ['Tanggal Ekspor', formatDateID(todayISO())],
-      ['Total Atlet Terdaftar', { value: data.athletes.length, type: 'Number' }],
-      ['Atlet Berstatus Aktif', { value: data.athletes.filter((a) => a.status === 'Aktif').length, type: 'Number' }],
-      ['Pelatih & Staf Terdaftar', { value: data.coaches?.length ?? 0, type: 'Number' }],
-      ['Fasilitas Kolam', { value: data.pools?.length ?? 0, type: 'Number' }],
-      ['Target Kejuaraan', { value: data.competitions?.length ?? 0, type: 'Number' }],
-      ['Catatan Waktu PB', { value: data.swimTimes.filter((s) => s.isPersonalBest).length, type: 'Number' }],
-      ['Total Pemasukan Kas', formatRupiah(income)],
-      ['Total Pengeluaran Kas', formatRupiah(expense)],
-      ['Saldo Kas Bersih', formatRupiah(income - expense)],
-      ['Tagihan Belum Lunas / Tempo', `${unpaid.length} invoice (${formatRupiah(unpaidTotal)})`],
-      ['Jadwal Sesi Latihan', { value: data.schedules.length, type: 'Number' }],
-    ],
+    rows: summaryRows,
   };
 
   const sheets: ExcelSheet[] = [
     summarySheet,
-    buildFinanceSheet(data.transactions),
-    buildAthletesSheet(data.athletes),
+    ...(!hideFinancial ? [buildFinanceSheet(data.transactions)] : []),
+    buildAthletesSheet(data.athletes, { hideFinancial }),
     buildSwimTimesSheet(data.swimTimes),
     buildSchedulesSheet(data.schedules),
     buildAttendanceSheet(data.attendance),
-    buildInvoicesSheet(data.invoices),
+    ...(!hideFinancial ? [buildInvoicesSheet(data.invoices)] : []),
   ];
 
-  if (data.coaches && data.coaches.length > 0) sheets.push(buildCoachesSheet(data.coaches));
-  if (data.pools && data.pools.length > 0) sheets.push(buildPoolsSheet(data.pools));
-  if (data.equipment && data.equipment.length > 0) sheets.push(buildEquipmentSheet(data.equipment));
-  if (data.competitions && data.competitions.length > 0) sheets.push(buildCompetitionsSheet(data.competitions));
+  if (!hideFinancial && data.coaches && data.coaches.length > 0) {
+    sheets.push(buildCoachesSheet(data.coaches));
+  }
+  if (data.pools && data.pools.length > 0) {
+    sheets.push(buildPoolsSheet(data.pools, { hideFinancial }));
+  }
+  if (data.equipment && data.equipment.length > 0) {
+    sheets.push(buildEquipmentSheet(data.equipment));
+  }
+  if (data.competitions && data.competitions.length > 0) {
+    sheets.push(buildCompetitionsSheet(data.competitions, { hideFinancial }));
+  }
 
-  downloadExcelWorkbook(`laporan-lengkap-${slugifyClub(club.name)}-${todayISO()}.xlsx`, sheets);
+  downloadExcelWorkbook(
+    `${hideFinancial ? 'laporan-pelatih' : 'laporan-lengkap'}-${slugifyClub(club.name)}-${todayISO()}.xlsx`,
+    sheets
+  );
 }
