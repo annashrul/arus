@@ -8,6 +8,7 @@ import {
   EquipmentItem,
   formatDateID,
   formatRupiah,
+  PaymentRequest,
   todayISO,
   TrainingSchedule,
 } from '../types/club';
@@ -87,6 +88,7 @@ export function buildDailyScheduleWhatsAppDigest(
 export function computeClubReminders(params: {
   club: ClubProfile;
   invoices: ClubInvoice[];
+  paymentRequests?: PaymentRequest[];
   schedules: TrainingSchedule[];
   attendance: AttendanceRecord[];
   announcements: ClubAnnouncement[];
@@ -101,9 +103,43 @@ export function computeClubReminders(params: {
 
   const items: ClubReminder[] = [];
 
-  // 1. Overdue & due-soon invoices
+  // 0. Incoming payment proofs awaiting verification
+  const pendingReqByInvoice = new Map<string, PaymentRequest>();
+  for (const pr of params.paymentRequests || []) {
+    if (pr.status === 'Menunggu Verifikasi') {
+      pendingReqByInvoice.set(pr.invoiceId, pr);
+    }
+  }
+
   for (const inv of params.invoices) {
     if (inv.status === 'Lunas' || inv.status === 'Dibatalkan') continue;
+    const reqMatch = pendingReqByInvoice.get(inv.id);
+    if (inv.status === 'Menunggu Verifikasi' || reqMatch) {
+      const payer = reqMatch?.payerName || inv.proofPayerName || inv.parentName || 'Wali Atlet';
+      const method = reqMatch?.paymentMethod || inv.proofMethod || 'Transfer';
+      items.push({
+        id: `inv-proof-${inv.id}`,
+        category: 'invoice',
+        severity: 'urgent',
+        title: `Bukti Bayar Masuk: ${inv.athleteName}`,
+        description: `${inv.description} · ${formatRupiah(inv.amount)} (${method})`,
+        meta: `${inv.invoiceNumber} · Pengirim: ${payer} · Siap Konfirmasi Cepat`,
+        targetNav: 'invoices',
+        actionLabel: 'Verifikasi Bayar',
+      });
+    }
+  }
+
+  // 1. Overdue & due-soon invoices
+  for (const inv of params.invoices) {
+    if (
+      inv.status === 'Lunas' ||
+      inv.status === 'Dibatalkan' ||
+      inv.status === 'Menunggu Verifikasi' ||
+      pendingReqByInvoice.has(inv.id)
+    ) {
+      continue;
+    }
     const diff = diffDaysFromToday(inv.dueDate, today);
     const isOverdue = inv.status === 'Jatuh Tempo' || (diff !== null && diff < 0);
     const isDueSoon = diff !== null && diff >= 0 && diff <= 5;

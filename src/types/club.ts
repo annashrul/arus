@@ -43,7 +43,18 @@ export type InvoiceCategory =
   | 'Pendaftaran Anggota Baru'
   | 'Lainnya';
 
-export type InvoiceStatus = 'Belum Lunas' | 'Lunas' | 'Jatuh Tempo' | 'Dibatalkan';
+export type InvoiceStatus =
+  | 'Belum Lunas'
+  | 'Menunggu Verifikasi'
+  | 'Lunas'
+  | 'Jatuh Tempo'
+  | 'Dibatalkan';
+export type ProofPaymentMethod = 'Transfer Bank' | 'QRIS' | 'Tunai' | 'Lainnya';
+export type PaymentRequestStatus =
+  | 'Menunggu Pembayaran'
+  | 'Menunggu Verifikasi'
+  | 'Terverifikasi'
+  | 'Ditolak';
 export type AttendanceStatus = 'Hadir' | 'Izin' | 'Sakit' | 'Alpa';
 export type AnnouncementDocType =
   | 'Pengumuman Klub'
@@ -213,10 +224,44 @@ export interface ClubInvoice {
   status: InvoiceStatus;
   paidDate?: string;
   paymentMethod?: string;
-  paymentProofPath?: string;
-  paymentProofStatus?: 'pending' | 'rejected' | 'verified';
-  paymentProofSubmittedAt?: unknown;
+  paymentToken?: string;
+  proofImageDataUrl?: string;
+  proofPayerName?: string;
+  proofMethod?: string;
+  proofNote?: string;
+  proofSubmittedAt?: string;
+  paymentRejectionReason?: string;
   notes?: string;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+export interface PaymentRequest {
+  id: string;
+  clubId: string;
+  ownerId: string;
+  clubName: string;
+  clubCity: string;
+  invoiceId: string;
+  invoiceNumber: string;
+  athleteName: string;
+  periodMonth: string;
+  description: string;
+  amount: number;
+  dueDate: string;
+  status: PaymentRequestStatus;
+  bankName?: string;
+  bankAccountNumber?: string;
+  bankAccountHolder?: string;
+  qrisPayload?: string;
+  qrisMerchantName?: string;
+  proofImageDataUrl?: string;
+  payerName?: string;
+  paymentMethod?: string;
+  proofNote?: string;
+  submittedAt?: string;
+  verifiedAt?: string;
+  rejectionReason?: string;
   createdAt?: unknown;
   updatedAt?: unknown;
 }
@@ -352,7 +397,19 @@ export const INVOICE_CATEGORIES: InvoiceCategory[] = [
   'Pendaftaran Anggota Baru',
   'Lainnya',
 ];
-export const INVOICE_STATUSES: InvoiceStatus[] = ['Belum Lunas', 'Lunas', 'Jatuh Tempo', 'Dibatalkan'];
+export const INVOICE_STATUSES: InvoiceStatus[] = [
+  'Belum Lunas',
+  'Menunggu Verifikasi',
+  'Lunas',
+  'Jatuh Tempo',
+  'Dibatalkan',
+];
+export const PROOF_PAYMENT_METHODS: ProofPaymentMethod[] = [
+  'Transfer Bank',
+  'QRIS',
+  'Tunai',
+  'Lainnya',
+];
 export const ATTENDANCE_STATUSES: AttendanceStatus[] = ['Hadir', 'Izin', 'Sakit', 'Alpa'];
 export const ANNOUNCEMENT_TYPES: AnnouncementDocType[] = [
   'Pengumuman Klub',

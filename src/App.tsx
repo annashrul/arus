@@ -1,7 +1,14 @@
-import { useUrlState } from './lib/urlState';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { onAuthStateChanged, signOut, User } from 'firebase/auth';
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import {
+  collection,
+  doc,
+  onSnapshot,
+  query,
+  serverTimestamp,
+  updateDoc,
+  where,
+} from 'firebase/firestore';
 import { auth, db, handleFirestoreError, OperationType } from './lib/firebase';
 import { seedSampleRecordsForClub } from './lib/seedSampleClub';
 import {
@@ -10,6 +17,11 @@ import {
   dismissReminderForToday,
   getDismissedReminderIds,
 } from './lib/reminders';
+import {
+  batchSetQueryParams,
+  copyCurrentPageUrl,
+  useQueryParam,
+} from './lib/useQueryParams';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ClubOnboarding } from './components/ClubOnboarding';
 import { NavSection, OverviewView } from './components/OverviewView';
@@ -18,6 +30,7 @@ import { AthletesAndTimesView } from './components/AthletesAndTimesView';
 import { SchedulesAndAttendanceView } from './components/SchedulesAndAttendanceView';
 import { InvoicesAndAdminView } from './components/InvoicesAndAdminView';
 import { ClubOperationsView } from './components/ClubOperationsView';
+import { ParentPaymentPortal } from './components/ParentPaymentPortal';
 import { RemindersDrawer } from './components/RemindersDrawer';
 import { PrintReportKind, PrintReportModal } from './components/PrintReportModal';
 import {
@@ -30,6 +43,7 @@ import {
   Coach,
   EquipmentItem,
   FinanceTransaction,
+  PaymentRequest,
   PoolFacility,
   SwimTime,
   TrainingSchedule,
@@ -38,7 +52,9 @@ import {
   Bell,
   Briefcase,
   CalendarDays,
+  Check,
   LayoutDashboard,
+  Link2,
   Loader2,
   LogOut,
   Menu,
@@ -58,19 +74,42 @@ const NAV_ITEMS: { id: NavSection; label: string; icon: React.ComponentType<{ cl
   { id: 'clubops', label: 'Pelatih & Klub', icon: Briefcase },
 ];
 
+const ALLOWED_NAVS: readonly NavSection[] = [
+  'overview',
+  'finance',
+  'athletes',
+  'schedules',
+  'invoices',
+  'clubops',
+];
+
+const ALLOWED_REPORTS: readonly ('' | PrintReportKind)[] = [
+  '',
+  'executive',
+  'finance',
+  'athletes',
+  'schedules',
+  'invoices',
+  'clubops',
+];
+
 function SwimmingClubWorkspace() {
+  const [bayarToken, setBayarToken] = useQueryParam('bayar', '');
+  const isParentPaymentRoute = bayarToken.trim() !== '';
+
   const [authReady, setAuthReady] = useState(false);
   const [user, setUser] = useState<User | null>(null);
 
   const [clubsLoading, setClubsLoading] = useState(true);
   const [clubs, setClubs] = useState<ClubProfile[]>([]);
-  const [selectedClubId, setSelectedClubId] = useUrlState<string>('club', '');
+  const [selectedClubId, setSelectedClubId] = useState<string | null>(null);
 
   const [athletes, setAthletes] = useState<Athlete[]>([]);
   const [swimTimes, setSwimTimes] = useState<SwimTime[]>([]);
   const [transactions, setTransactions] = useState<FinanceTransaction[]>([]);
   const [schedules, setSchedules] = useState<TrainingSchedule[]>([]);
   const [invoices, setInvoices] = useState<ClubInvoice[]>([]);
+  const [paymentRequests, setPaymentRequests] = useState<PaymentRequest[]>([]);
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [announcements, setAnnouncements] = useState<ClubAnnouncement[]>([]);
   const [coaches, setCoaches] = useState<Coach[]>([]);
@@ -78,19 +117,34 @@ function SwimmingClubWorkspace() {
   const [equipment, setEquipment] = useState<EquipmentItem[]>([]);
   const [competitions, setCompetitions] = useState<ClubCompetition[]>([]);
 
-  const [activeNav, setActiveNav] = useUrlState<NavSection>('page', 'overview', { values: NAV_ITEMS.map((item) => item.id), history: 'push' });
+  const [activeNav, setActiveNav] = useQueryParam<NavSection>('nav', 'overview', {
+    allowed: ALLOWED_NAVS,
+    history: 'push',
+  });
+  const [remindersParam, setRemindersParam] = useQueryParam<'' | '1'>('pengingat', '', {
+    allowed: ['', '1'],
+  });
+  const [laporanParam, setLaporanParam] = useQueryParam<'' | PrintReportKind>('laporan', '', {
+    allowed: ALLOWED_REPORTS,
+  });
+
+  const remindersOpen = remindersParam === '1';
+  const setRemindersOpen = (open: boolean) => setRemindersParam(open ? '1' : '');
+
+  const printReportKind: PrintReportKind | null =
+    laporanParam === '' ? null : (laporanParam as PrintReportKind);
+  const setPrintReportKind = (kind: PrintReportKind | null) =>
+    setLaporanParam(kind ?? '');
+
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [seedingSample, setSeedingSample] = useState(false);
-  const [remindersOpen, setRemindersOpen] = useUrlState<boolean>('reminders.open', false);
   const [dismissedReminderIds, setDismissedReminderIds] = useState<string[]>([]);
-  const [reportKind, setReportKind] = useUrlState<PrintReportKind | ''>(
-    'report', '', { values: ['', 'executive', 'finance', 'athletes', 'schedules', 'invoices', 'clubops'] }
-  );
-  const printReportKind = reportKind || null;
-  const setPrintReportKind = (kind: PrintReportKind | null) => setReportKind(kind || '');
+  const [copiedLink, setCopiedLink] = useState(false);
+  const syncedProofKeysRef = useRef<Set<string>>(new Set());
 
-  // 1. Auth Listener
+  // 1. Auth Listener (skip in public payment portal view)
   useEffect(() => {
+    if (isParentPaymentRoute) return;
     const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u);
       setAuthReady(true);
@@ -100,11 +154,11 @@ function SwimmingClubWorkspace() {
       }
     });
     return () => unsub();
-  }, []);
+  }, [isParentPaymentRoute]);
 
-  // 2. Clubs Listener (requires authenticated user)
+  // 2. Clubs Listener (requires authenticated user, skipped on ?bayar= route)
   useEffect(() => {
-    if (!authReady || !user) return;
+    if (isParentPaymentRoute || !authReady || !user) return;
     setClubsLoading(true);
     const q = query(collection(db, 'clubs'), where('ownerId', '==', user.uid));
     const unsub = onSnapshot(
@@ -122,18 +176,19 @@ function SwimmingClubWorkspace() {
       }
     );
     return () => unsub();
-  }, [authReady, user, selectedClubId]);
+  }, [isParentPaymentRoute, authReady, user, selectedClubId]);
 
   const activeClub = clubs.find((c) => c.id === selectedClubId) || clubs[0] || null;
 
   // 3. Domain Listeners (only attach when user & activeClub are ready)
   useEffect(() => {
-    if (!authReady || !user || !activeClub) {
+    if (isParentPaymentRoute || !authReady || !user || !activeClub) {
       setAthletes([]);
       setSwimTimes([]);
       setTransactions([]);
       setSchedules([]);
       setInvoices([]);
+      setPaymentRequests([]);
       setAttendance([]);
       setAnnouncements([]);
       setCoaches([]);
@@ -246,6 +301,20 @@ function SwimmingClubWorkspace() {
       (err) => handleFirestoreError(err, OperationType.LIST, 'competitions')
     );
 
+    const unsubPaymentRequests = onSnapshot(
+      query(
+        collection(db, 'paymentRequests'),
+        where('ownerId', '==', uid),
+        where('clubId', '==', cid)
+      ),
+      (snap) => {
+        setPaymentRequests(
+          snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<PaymentRequest, 'id'>) }))
+        );
+      },
+      (err) => handleFirestoreError(err, OperationType.LIST, 'paymentRequests')
+    );
+
     return () => {
       unsubAthletes();
       unsubSwimTimes();
@@ -258,8 +327,42 @@ function SwimmingClubWorkspace() {
       unsubPools();
       unsubEquipment();
       unsubCompetitions();
+      unsubPaymentRequests();
     };
-  }, [authReady, user, activeClub]);
+  }, [isParentPaymentRoute, authReady, user, activeClub]);
+
+  // Auto-sync parent-uploaded payment proofs from /paymentRequests/{token} into /invoices/{id}
+  useEffect(() => {
+    if (isParentPaymentRoute || !user || !activeClub || paymentRequests.length === 0 || invoices.length === 0) {
+      return;
+    }
+    const invoiceById = new Map<string, ClubInvoice>(invoices.map((inv) => [inv.id, inv]));
+    for (const pr of paymentRequests) {
+      if (pr.status !== 'Menunggu Verifikasi') continue;
+      const inv = invoiceById.get(pr.invoiceId);
+      if (!inv) continue;
+      if (inv.status !== 'Belum Lunas' && inv.status !== 'Jatuh Tempo') continue;
+
+      const syncKey = `${pr.id}:${pr.submittedAt || ''}:${inv.status}`;
+      if (syncedProofKeysRef.current.has(syncKey)) continue;
+      syncedProofKeysRef.current.add(syncKey);
+
+      void updateDoc(doc(db, 'invoices', inv.id), {
+        status: 'Menunggu Verifikasi',
+        paymentToken: pr.id,
+        proofImageDataUrl: pr.proofImageDataUrl || '',
+        proofPayerName: pr.payerName || '',
+        proofMethod: pr.paymentMethod || 'Transfer Bank',
+        proofNote: pr.proofNote || '',
+        proofSubmittedAt: pr.submittedAt || '',
+        paymentRejectionReason: '',
+        updatedAt: serverTimestamp(),
+      }).catch((err) => {
+        syncedProofKeysRef.current.delete(syncKey);
+        handleFirestoreError(err, OperationType.UPDATE, `invoices/${inv.id}`);
+      });
+    }
+  }, [isParentPaymentRoute, user, activeClub, paymentRequests, invoices]);
 
   useEffect(() => {
     if (!activeClub) {
@@ -274,13 +377,14 @@ function SwimmingClubWorkspace() {
     return computeClubReminders({
       club: activeClub,
       invoices,
+      paymentRequests,
       schedules,
       attendance,
       announcements,
       competitions,
       equipment,
     });
-  }, [activeClub, invoices, schedules, attendance, announcements, competitions, equipment]);
+  }, [activeClub, invoices, paymentRequests, schedules, attendance, announcements, competitions, equipment]);
 
   const activeReminders = useMemo(
     () => allReminders.filter((r) => !dismissedReminderIds.includes(r.id)),
@@ -301,6 +405,23 @@ function SwimmingClubWorkspace() {
       setSeedingSample(false);
     }
   };
+
+  const handleCopyCurrentUrl = async () => {
+    const ok = await copyCurrentPageUrl();
+    if (ok) {
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2000);
+    }
+  };
+
+  if (isParentPaymentRoute) {
+    return (
+      <ParentPaymentPortal
+        token={bayarToken}
+        onExitToAdmin={() => setBayarToken('', 'push')}
+      />
+    );
+  }
 
   if (!authReady || (user && clubsLoading)) {
     return (
@@ -494,12 +615,26 @@ function SwimmingClubWorkspace() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={handleCopyCurrentUrl}
+              aria-label="Salin link halaman beserta filter aktif"
+              title="Salin link halaman ini beserta tab & filter aktif"
+              className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 min-h-[40px] lg:min-h-[36px] text-xs font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              {copiedLink ? (
+                <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+              ) : (
+                <Link2 className="w-3.5 h-3.5 text-slate-600 shrink-0" />
+              )}
+              <span className="hidden sm:inline">{copiedLink ? 'Tersalin' : 'Salin Link'}</span>
+            </button>
             <button
               type="button"
               onClick={() => setRemindersOpen(true)}
               aria-label="Buka notifikasi pengingat"
-              className="inline-flex items-center gap-1.5 px-3 min-h-[40px] lg:min-h-[36px] text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200/70 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 min-h-[40px] lg:min-h-[36px] text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200/70 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
             >
               <Bell
                 className={`w-3.5 h-3.5 shrink-0 ${
@@ -520,7 +655,7 @@ function SwimmingClubWorkspace() {
             <button
               type="button"
               onClick={() => setPrintReportKind(defaultReportForNav[activeNav])}
-              className="inline-flex items-center gap-1.5 px-3 min-h-[40px] lg:min-h-[36px] text-xs font-medium text-white bg-sky-700 hover:bg-sky-800 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 min-h-[40px] lg:min-h-[36px] text-xs font-medium text-white bg-sky-700 hover:bg-sky-800 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
             >
               <Printer className="w-3.5 h-3.5 shrink-0" />
               <span>Cetak Laporan</span>
@@ -538,6 +673,7 @@ function SwimmingClubWorkspace() {
               schedules={schedules}
               attendance={attendance}
               invoices={invoices}
+              paymentRequests={paymentRequests}
               announcements={announcements}
               coaches={coaches}
               pools={pools}
@@ -547,6 +683,12 @@ function SwimmingClubWorkspace() {
               onOpenReminders={() => setRemindersOpen(true)}
               onOpenPrintReport={(kind) => setPrintReportKind(kind)}
               onNavigate={setActiveNav}
+              onOpenVerificationQueue={() =>
+                batchSetQueryParams(
+                  { nav: 'invoices', inv_tab: 'invoices', inv_status: 'Menunggu Verifikasi' },
+                  'push'
+                )
+              }
               onLoadSampleData={handleLoadSampleData}
               seedingSample={seedingSample}
             />
@@ -592,6 +734,7 @@ function SwimmingClubWorkspace() {
               club={activeClub}
               userId={user.uid}
               invoices={invoices}
+              paymentRequests={paymentRequests}
               athletes={athletes}
               announcements={announcements}
               onOpenPrintReport={() => setPrintReportKind('invoices')}

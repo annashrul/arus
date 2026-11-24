@@ -26,6 +26,18 @@ service cloud.firestore {
       return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
+    function isValidPaymentToken(tokenId) {
+      return tokenId is string && tokenId.size() >= 24 && tokenId.size() <= 64 && tokenId.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidOptionalPaymentToken(val) {
+      return val is string && (val == '' || isValidPaymentToken(val));
+    }
+
+    function isValidProofDataUrl(val) {
+      return val is string && val.size() <= 200000 && (val == '' || val.matches('^data:image/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$'));
+    }
+
     function incoming() {
       return request.resource.data;
     }
@@ -66,6 +78,12 @@ service cloud.firestore {
       return isValidId(scheduleId) &&
         exists(/databases/$(database)/documents/schedules/$(scheduleId)) &&
         get(/databases/$(database)/documents/schedules/$(scheduleId)).data.ownerId == request.auth.uid;
+    }
+
+    function isOwningInvoice(invoiceId) {
+      return isValidId(invoiceId) &&
+        exists(/databases/$(database)/documents/invoices/$(invoiceId)) &&
+        get(/databases/$(database)/documents/invoices/$(invoiceId)).data.ownerId == request.auth.uid;
     }
 
     // ---------------------------------------------------------
@@ -177,10 +195,7 @@ service cloud.firestore {
 
     function isValidInvoice(data) {
       return data.keys().hasAll(['clubId', 'ownerId', 'invoiceNumber', 'athleteId', 'athleteName', 'periodMonth', 'category', 'description', 'amount', 'dueDate', 'status', 'createdAt', 'updatedAt'])
-        && data.keys().hasOnly(['clubId', 'ownerId', 'invoiceNumber', 'athleteId', 'athleteName', 'parentName', 'parentPhone', 'periodMonth', 'category', 'description', 'amount', 'dueDate', 'status', 'paidDate', 'paymentMethod', 'paymentProofPath', 'paymentProofStatus', 'paymentProofSubmittedAt', 'notes', 'createdAt', 'updatedAt'])
-        && (!('paymentProofPath' in data) || (data.paymentProofPath is string && data.paymentProofPath.size() <= 250))
-        && (!('paymentProofStatus' in data) || data.paymentProofStatus in ['pending', 'rejected', 'verified'])
-        && (!('paymentProofSubmittedAt' in data) || data.paymentProofSubmittedAt is timestamp)
+        && data.keys().hasOnly(['clubId', 'ownerId', 'invoiceNumber', 'athleteId', 'athleteName', 'parentName', 'parentPhone', 'periodMonth', 'category', 'description', 'amount', 'dueDate', 'status', 'paidDate', 'paymentMethod', 'paymentToken', 'proofImageDataUrl', 'proofPayerName', 'proofMethod', 'proofNote', 'proofSubmittedAt', 'paymentRejectionReason', 'notes', 'createdAt', 'updatedAt'])
         && isValidId(data.clubId)
         && isValidId(data.ownerId)
         && data.invoiceNumber is string && data.invoiceNumber.size() >= 3 && data.invoiceNumber.size() <= 40
@@ -193,10 +208,48 @@ service cloud.firestore {
         && data.description is string && data.description.size() >= 2 && data.description.size() <= 200
         && data.amount is number && data.amount > 0 && data.amount <= 500000000
         && isValidDateStr(data.dueDate)
-        && data.status in ['Belum Lunas', 'Lunas', 'Jatuh Tempo', 'Dibatalkan']
+        && data.status in ['Belum Lunas', 'Menunggu Verifikasi', 'Lunas', 'Jatuh Tempo', 'Dibatalkan']
         && (!('paidDate' in data) || isValidOptionalDateStr(data.paidDate))
         && (!('paymentMethod' in data) || (data.paymentMethod is string && data.paymentMethod.size() <= 30))
+        && (!('paymentToken' in data) || isValidOptionalPaymentToken(data.paymentToken))
+        && (!('proofImageDataUrl' in data) || isValidProofDataUrl(data.proofImageDataUrl))
+        && (!('proofPayerName' in data) || (data.proofPayerName is string && data.proofPayerName.size() <= 100))
+        && (!('proofMethod' in data) || (data.proofMethod is string && data.proofMethod in ['', 'Transfer Bank', 'QRIS', 'Tunai', 'Lainnya']))
+        && (!('proofNote' in data) || (data.proofNote is string && data.proofNote.size() <= 300))
+        && (!('proofSubmittedAt' in data) || (data.proofSubmittedAt is string && data.proofSubmittedAt.size() <= 40))
+        && (!('paymentRejectionReason' in data) || (data.paymentRejectionReason is string && data.paymentRejectionReason.size() <= 200))
         && (!('notes' in data) || (data.notes is string && data.notes.size() <= 300))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidPaymentRequest(data) {
+      return data.keys().hasAll(['clubId', 'ownerId', 'clubName', 'clubCity', 'invoiceId', 'invoiceNumber', 'athleteName', 'periodMonth', 'description', 'amount', 'dueDate', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['clubId', 'ownerId', 'clubName', 'clubCity', 'invoiceId', 'invoiceNumber', 'athleteName', 'periodMonth', 'description', 'amount', 'dueDate', 'status', 'bankName', 'bankAccountNumber', 'bankAccountHolder', 'qrisPayload', 'qrisMerchantName', 'proofImageDataUrl', 'payerName', 'paymentMethod', 'proofNote', 'submittedAt', 'verifiedAt', 'rejectionReason', 'createdAt', 'updatedAt'])
+        && isValidId(data.clubId)
+        && isValidId(data.ownerId)
+        && data.clubName is string && data.clubName.size() >= 2 && data.clubName.size() <= 100
+        && data.clubCity is string && data.clubCity.size() >= 2 && data.clubCity.size() <= 60
+        && isValidId(data.invoiceId)
+        && data.invoiceNumber is string && data.invoiceNumber.size() >= 3 && data.invoiceNumber.size() <= 40
+        && data.athleteName is string && data.athleteName.size() >= 2 && data.athleteName.size() <= 100
+        && data.periodMonth is string && data.periodMonth.size() >= 3 && data.periodMonth.size() <= 30
+        && data.description is string && data.description.size() >= 2 && data.description.size() <= 200
+        && data.amount is number && data.amount > 0 && data.amount <= 500000000
+        && isValidDateStr(data.dueDate)
+        && data.status in ['Menunggu Pembayaran', 'Menunggu Verifikasi', 'Terverifikasi', 'Ditolak']
+        && (!('bankName' in data) || (data.bankName is string && data.bankName.size() <= 60))
+        && (!('bankAccountNumber' in data) || (data.bankAccountNumber is string && data.bankAccountNumber.size() <= 40))
+        && (!('bankAccountHolder' in data) || (data.bankAccountHolder is string && data.bankAccountHolder.size() <= 80))
+        && (!('qrisPayload' in data) || (data.qrisPayload is string && data.qrisPayload.size() <= 512))
+        && (!('qrisMerchantName' in data) || (data.qrisMerchantName is string && data.qrisMerchantName.size() <= 60))
+        && (!('proofImageDataUrl' in data) || isValidProofDataUrl(data.proofImageDataUrl))
+        && (!('payerName' in data) || (data.payerName is string && data.payerName.size() <= 100))
+        && (!('paymentMethod' in data) || (data.paymentMethod is string && data.paymentMethod in ['', 'Transfer Bank', 'QRIS', 'Tunai', 'Lainnya']))
+        && (!('proofNote' in data) || (data.proofNote is string && data.proofNote.size() <= 300))
+        && (!('submittedAt' in data) || (data.submittedAt is string && data.submittedAt.size() <= 40))
+        && (!('verifiedAt' in data) || (data.verifiedAt is string && data.verifiedAt.size() <= 40))
+        && (!('rejectionReason' in data) || (data.rejectionReason is string && data.rejectionReason.size() <= 200))
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
     }
@@ -437,11 +490,67 @@ service cloud.firestore {
         && (
           isAdmin() ||
           (isOwnerOfExisting() && (
-            (existing().status in ['Belum Lunas', 'Jatuh Tempo'] && incoming().diff(existing()).affectedKeys().hasOnly(['athleteName', 'parentName', 'parentPhone', 'periodMonth', 'category', 'description', 'amount', 'dueDate', 'status', 'paidDate', 'paymentMethod', 'paymentProofPath', 'paymentProofStatus', 'paymentProofSubmittedAt', 'notes', 'updatedAt'])) ||
-            (existing().status in ['Belum Lunas', 'Jatuh Tempo'] && incoming().status == 'Lunas' && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'paidDate', 'paymentMethod', 'paymentProofStatus', 'notes', 'updatedAt']))
+            // Action: Edit invoice details or submit/sync payment proof while pending
+            (existing().status in ['Belum Lunas', 'Jatuh Tempo', 'Menunggu Verifikasi']
+              && incoming().status in ['Belum Lunas', 'Jatuh Tempo', 'Menunggu Verifikasi', 'Dibatalkan']
+              && incoming().diff(existing()).affectedKeys().hasOnly(['athleteName', 'parentName', 'parentPhone', 'periodMonth', 'category', 'description', 'amount', 'dueDate', 'status', 'paymentMethod', 'paymentToken', 'proofImageDataUrl', 'proofPayerName', 'proofMethod', 'proofNote', 'proofSubmittedAt', 'paymentRejectionReason', 'notes', 'updatedAt'])) ||
+            // Action: Quick-confirm or mark invoice paid (Lunas)
+            (existing().status in ['Belum Lunas', 'Jatuh Tempo', 'Menunggu Verifikasi']
+              && incoming().status == 'Lunas'
+              && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'paidDate', 'paymentMethod', 'paymentRejectionReason', 'notes', 'updatedAt']))
           ))
         );
       allow delete: if isVerifiedUser() && isValidId(invoiceId) && (isOwnerOfExisting() || isAdmin());
+    }
+
+    match /paymentRequests/{tokenId} {
+      // Split-collection parent portal: no PII (phone/email/address); access requires knowing the 24-64 char cryptographic tokenId
+      allow get: if isValidPaymentToken(tokenId) && (
+        (isSignedIn() && (isOwnerOfExisting() || isAdmin())) ||
+        resource != null
+      );
+      allow list: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow create: if isVerifiedUser()
+        && isValidPaymentToken(tokenId)
+        && isValidPaymentRequest(incoming())
+        && incoming().ownerId == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && isOwningClub(incoming().clubId)
+        && isOwningInvoice(incoming().invoiceId);
+      allow update: if isValidPaymentToken(tokenId)
+        && isValidPaymentRequest(incoming())
+        && incoming().ownerId == existing().ownerId
+        && incoming().clubId == existing().clubId
+        && incoming().invoiceId == existing().invoiceId
+        && incoming().invoiceNumber == existing().invoiceNumber
+        && incoming().athleteName == existing().athleteName
+        && incoming().periodMonth == existing().periodMonth
+        && incoming().description == existing().description
+        && incoming().amount == existing().amount
+        && incoming().dueDate == existing().dueDate
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Tier 1: Verified admin or club owner updating verification status or syncing club payment instructions
+          (isVerifiedUser() && (isOwnerOfExisting() || isAdmin())
+            && incoming().diff(existing()).affectedKeys().hasOnly(['clubName', 'clubCity', 'bankName', 'bankAccountNumber', 'bankAccountHolder', 'qrisPayload', 'qrisMerchantName', 'status', 'proofImageDataUrl', 'payerName', 'paymentMethod', 'proofNote', 'submittedAt', 'verifiedAt', 'rejectionReason', 'updatedAt'])) ||
+          // Tier 2: Parent uploading payment receipt image via unguessable token link
+          (resource != null
+            && existing().status in ['Menunggu Pembayaran', 'Ditolak']
+            && incoming().status == 'Menunggu Verifikasi'
+            && ('proofImageDataUrl' in incoming())
+            && incoming().proofImageDataUrl.size() > 30
+            && isValidProofDataUrl(incoming().proofImageDataUrl)
+            && ('payerName' in incoming())
+            && incoming().payerName.size() >= 2
+            && incoming().payerName.size() <= 100
+            && ('paymentMethod' in incoming())
+            && incoming().paymentMethod in ['Transfer Bank', 'QRIS', 'Tunai', 'Lainnya']
+            && (!('rejectionReason' in incoming()) || incoming().rejectionReason == '')
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'proofImageDataUrl', 'payerName', 'paymentMethod', 'proofNote', 'submittedAt', 'rejectionReason', 'updatedAt']))
+        );
+      allow delete: if isVerifiedUser() && isValidPaymentToken(tokenId) && (isOwnerOfExisting() || isAdmin());
     }
 
     match /attendance/{attendanceId} {

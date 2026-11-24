@@ -1,4 +1,3 @@
-import { useUrlState } from '../lib/urlState';
 import React, { useMemo, useState } from 'react';
 import {
   addDoc,
@@ -65,6 +64,7 @@ import { ExportActionMenu } from './ExportActionMenu';
 import { BottomSheetSelect } from './BottomSheetSelect';
 import { WhatsAppNotifyModal, WhatsAppRecipientItem } from './WhatsAppNotifyModal';
 import { buildScheduleNotificationMessage, ScheduleMessageInput } from '../lib/whatsapp';
+import { batchSetQueryParams, useQueryParam } from '../lib/useQueryParams';
 
 interface SchedulesAndAttendanceViewProps {
   club: ClubProfile;
@@ -87,9 +87,13 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
   pools = [],
   onOpenPrintReport,
 }) => {
-  const [activeTab, setActiveTab] = useUrlState<'schedules' | 'attendance'>('schedules.tab', 'schedules', { values: ['schedules', 'attendance'], history: 'push' });
-  const [dayFilter, setDayFilter] = useUrlState<string>('schedules.day', 'all');
-  const [ageFilter, setAgeFilter] = useUrlState<string>('schedules.age', 'all');
+  const [activeTab, setActiveTab] = useQueryParam<'schedules' | 'attendance'>(
+    'jd_tab',
+    'schedules',
+    { allowed: ['schedules', 'attendance'], history: 'push' }
+  );
+  const [dayFilter, setDayFilter] = useQueryParam('jd_hari', 'all');
+  const [ageFilter, setAgeFilter] = useQueryParam('jd_ku', 'all');
 
   // Schedule Modal
   const [modalOpen, setModalOpen] = useState(false);
@@ -119,9 +123,9 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
     recipients: WhatsAppRecipientItem[];
   } | null>(null);
 
-  // Attendance controls
-  const [selectedScheduleId, setSelectedScheduleId] = useUrlState<string>('attendance.schedule', '');
-  const [attendanceDate, setAttendanceDate] = useUrlState('attendance.date', todayISO());
+  // Attendance controls (synced to URL query params)
+  const [selectedScheduleId, setSelectedScheduleId] = useQueryParam('pr_sesi', '');
+  const [attendanceDate, setAttendanceDate] = useQueryParam('pr_tgl', todayISO());
   const [markingId, setMarkingId] = useState<string | null>(null);
   const [attendanceError, setAttendanceError] = useState<string | null>(null);
 
@@ -747,12 +751,17 @@ export const SchedulesAndAttendanceView: React.FC<SchedulesAndAttendanceViewProp
                     <button
                       type="button"
                       onClick={() => {
-                        setSelectedScheduleId(sch.id);
-                        if (sch.sessionDate && sch.sessionDate <= todayISO()) {
-                          setAttendanceDate(sch.sessionDate);
-                        }
                         setAttendanceError(null);
-                        setActiveTab('attendance');
+                        batchSetQueryParams(
+                          {
+                            pr_sesi: sch.id,
+                            ...(sch.sessionDate && sch.sessionDate <= todayISO()
+                              ? { pr_tgl: sch.sessionDate }
+                              : {}),
+                            jd_tab: 'attendance',
+                          },
+                          'push'
+                        );
                       }}
                       className="w-full min-h-[44px] sm:min-h-[36px] text-xs font-medium text-sky-700 bg-sky-50 hover:bg-sky-100 rounded-lg transition-colors cursor-pointer"
                     >

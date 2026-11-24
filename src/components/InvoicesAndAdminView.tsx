@@ -1,18 +1,15 @@
-import { useUrlState } from '../lib/urlState';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import QRCode from 'qrcode';
-import { getBlob, ref, uploadBytes } from 'firebase/storage';
 import {
   addDoc,
   collection,
   deleteDoc,
   doc,
-  runTransaction,
   serverTimestamp,
   updateDoc,
   writeBatch,
 } from 'firebase/firestore';
-import { db, storage, handleFirestoreError, OperationType } from '../lib/firebase';
+import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import {
   clampString,
   FieldErrors,
@@ -38,6 +35,9 @@ import {
   InvoiceCategory,
   PAYMENT_METHODS,
   PaymentMethod,
+  PaymentRequest,
+  PROOF_PAYMENT_METHODS,
+  ProofPaymentMethod,
   todayISO,
 } from '../types/club';
 import { buildInvoicesSheet, downloadExcelWorkbook } from '../lib/exportUtils';
@@ -46,26 +46,38 @@ import {
   Building2,
   Check,
   CheckCircle2,
+  Clock,
   Copy,
+  Eye,
   FileText,
   Filter,
   ImagePlus,
   Layers,
+  Link2,
   Loader2,
   MessageCircle,
   Plus,
   Printer,
   QrCode,
   Search,
+  ShieldCheck,
   Trash2,
   Upload,
   X,
+  XCircle,
 } from 'lucide-react';
 import { ExportActionMenu } from './ExportActionMenu';
 import { BottomSheetSelect } from './BottomSheetSelect';
 import { QrisCodeCard } from './QrisCodeCard';
 import { WhatsAppNotifyModal, WhatsAppRecipientItem } from './WhatsAppNotifyModal';
 import { buildInvoiceNotificationMessage } from '../lib/whatsapp';
+import {
+  buildPaymentPortalUrl,
+  compressPaymentProofImage,
+  generatePaymentToken,
+  isValidPaymentTokenFormat,
+} from '../lib/paymentProof';
+import { useQueryParam } from '../lib/useQueryParams';
 import {
   buildSampleQrisPayload,
   decodeQrisFromImageFile,
@@ -77,6 +89,7 @@ interface InvoicesAndAdminViewProps {
   club: ClubProfile;
   userId: string;
   invoices: ClubInvoice[];
+  paymentRequests?: PaymentRequest[];
   athletes: Athlete[];
   announcements: ClubAnnouncement[];
   onOpenPrintReport: () => void;
@@ -86,18 +99,25 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
   club,
   userId,
   invoices,
+  paymentRequests = [],
   athletes,
   announcements,
   onOpenPrintReport,
 }) => {
-  const [activeTab, setActiveTab] = useUrlState<'invoices' | 'letters' | 'settings'>('invoices.tab', 'invoices', { values: ['invoices', 'letters', 'settings'], history: 'push' });
+  const [activeTab, setActiveTab] = useQueryParam<'invoices' | 'letters' | 'settings'>(
+    'inv_tab',
+    'invoices',
+    { allowed: ['invoices', 'letters', 'settings'], history: 'push' }
+  );
   const [listError, setListError] = useState<string | null>(null);
   const [confirmDeleteInvId, setConfirmDeleteInvId] = useState<string | null>(null);
   const [confirmDeleteAnnId, setConfirmDeleteAnnId] = useState<string | null>(null);
 
-  // Invoice filters
-  const [invSearch, setInvSearch] = useUrlState<string>('invoices.q', '');
-  const [statusFilter, setStatusFilter] = useUrlState<string>('invoices.status', 'all');
+  // Invoice filters (synced to URL query params)
+  const [invSearch, setInvSearch] = useQueryParam('inv_q', '');
+  const [statusFilter, setStatusFilter] = useQueryParam('inv_status', 'all', {
+    allowed: ['all', ...INVOICE_STATUSES],
+  });
 
   // Create Invoice Modal
   const [createInvOpen, setCreateInvOpen] = useState(false);
@@ -123,9 +143,7 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
   const [savingBatch, setSavingBatch] = useState(false);
 
   // Settle / Mark Paid Modal
-  const [payModalInvId, setPayModalInvId] = useUrlState<string>('invoices.pay', '');
-  const payModalInv = invoices.find((inv) => inv.id === payModalInvId) || null;
-  const setPayModalInv = (inv: ClubInvoice | null) => setPayModalInvId(inv?.id || '');
+  const [payModalInv, setPayModalInv] = useState<ClubInvoice | null>(null);
   const [payDate, setPayDate] = useState(todayISO());
   const [payMethod, setPayMethod] = useState<PaymentMethod>('Transfer Bank');
   const [payNotes, setPayNotes] = useState('');
@@ -134,12 +152,33 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
     FieldErrors<'payDate' | 'payMethod' | 'payNotes'>
   >({});
   const [paying, setPaying] = useState(false);
-  const [proofBusyId, setProofBusyId] = useState<string | null>(null);
 
-  // Preview / Print Invoice Modal
-  const [previewInvId, setPreviewInvId] = useUrlState<string>('invoices.preview', '');
-  const previewInv = invoices.find((inv) => inv.id === previewInvId) || null;
-  const setPreviewInv = (inv: ClubInvoice | null) => setPreviewInvId(inv?.id || '');
+  // Proof Inspection & Quick Confirm / Admin Upload Modal (synced to ?inv_bukti)
+  const [proofModalInvId, setProofModalInvId] = useQueryParam('inv_bukti', '', {
+    history: 'push',
+  });
+  const proofModalInv = useMemo(
+    () => (proofModalInvId ? invoices.find((i) => i.id === proofModalInvId) || null : null),
+    [invoices, proofModalInvId]
+  );
+  const [quickConfirmingId, setQuickConfirmingId] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [rejectingProof, setRejectingProof] = useState(false);
+  const [proofActionError, setProofActionError] = useState<string | null>(null);
+  const [adminProofImage, setAdminProofImage] = useState('');
+  const [adminProofPayer, setAdminProofPayer] = useState('');
+  const [adminProofMethod, setAdminProofMethod] = useState<ProofPaymentMethod>('Transfer Bank');
+  const [adminProofNote, setAdminProofNote] = useState('');
+  const [adminProofCompressing, setAdminProofCompressing] = useState(false);
+  const [adminProofSaving, setAdminProofSaving] = useState(false);
+  const [copiedPortalInvId, setCopiedPortalInvId] = useState<string | null>(null);
+
+  // Preview / Print Invoice Modal (synced to ?inv_lihat)
+  const [previewInvId, setPreviewInvId] = useQueryParam('inv_lihat', '', { history: 'push' });
+  const previewInv = useMemo(
+    () => (previewInvId ? invoices.find((i) => i.id === previewInvId) || null : null),
+    [invoices, previewInvId]
+  );
   const [copiedWa, setCopiedWa] = useState(false);
 
   // WhatsApp Parent Notification Modal
@@ -162,7 +201,11 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
     FieldErrors<'title' | 'type' | 'date' | 'target' | 'author' | 'content'>
   >({});
   const [savingAnn, setSavingAnn] = useState(false);
-  const [previewAnn, setPreviewAnn] = useState<ClubAnnouncement | null>(null);
+  const [previewAnnId, setPreviewAnnId] = useQueryParam('srt_lihat', '', { history: 'push' });
+  const previewAnn = useMemo(
+    () => (previewAnnId ? announcements.find((a) => a.id === previewAnnId) || null : null),
+    [announcements, previewAnnId]
+  );
 
   // Club Settings Form
   const [sName, setSName] = useState(club.name);
@@ -240,19 +283,74 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
     };
   }, [sQrisPayload]);
 
+  const paymentReqMaps = useMemo(() => {
+    const byId = new Map<string, PaymentRequest>();
+    const byInvoiceId = new Map<string, PaymentRequest>();
+    for (const pr of paymentRequests) {
+      byId.set(pr.id, pr);
+      byInvoiceId.set(pr.invoiceId, pr);
+    }
+    return { byId, byInvoiceId };
+  }, [paymentRequests]);
+
+  const getProofSummary = (inv: ClubInvoice) => {
+    const req =
+      (inv.paymentToken ? paymentReqMaps.byId.get(inv.paymentToken) : undefined) ||
+      paymentReqMaps.byInvoiceId.get(inv.id);
+    const proofImage = inv.proofImageDataUrl || req?.proofImageDataUrl || '';
+    const payerName = inv.proofPayerName || req?.payerName || '';
+    const method = inv.proofMethod || req?.paymentMethod || 'Transfer Bank';
+    const note = inv.proofNote || req?.proofNote || '';
+    const submittedAt = inv.proofSubmittedAt || req?.submittedAt || '';
+    const effectiveStatus =
+      inv.status !== 'Lunas' &&
+      inv.status !== 'Dibatalkan' &&
+      req?.status === 'Menunggu Verifikasi'
+        ? 'Menunggu Verifikasi'
+        : inv.status;
+    const hasPendingProof =
+      inv.status !== 'Lunas' &&
+      inv.status !== 'Dibatalkan' &&
+      (effectiveStatus === 'Menunggu Verifikasi' || Boolean(proofImage));
+    return {
+      req,
+      token: inv.paymentToken || req?.id || '',
+      proofImage,
+      payerName,
+      method,
+      note,
+      submittedAt,
+      effectiveStatus,
+      hasPendingProof,
+    };
+  };
+
+  const pendingVerificationInvoices = useMemo(
+    () => invoices.filter((inv) => getProofSummary(inv).hasPendingProof),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [invoices, paymentRequests]
+  );
+
   const filteredInvoices = useMemo(() => {
     const q = invSearch.trim().toLowerCase();
     return [...invoices]
       .filter((inv) => {
-        if (statusFilter === 'proof-pending' ? inv.paymentProofStatus !== 'pending' || inv.status === 'Lunas' : statusFilter !== 'all' && inv.status !== statusFilter) return false;
+        const { effectiveStatus } = getProofSummary(inv);
+        if (statusFilter !== 'all' && effectiveStatus !== statusFilter) return false;
         if (q) {
           const hay = `${inv.invoiceNumber} ${inv.athleteName} ${inv.description} ${inv.periodMonth}`.toLowerCase();
           if (!hay.includes(q)) return false;
         }
         return true;
       })
-      .sort((a, b) => b.dueDate.localeCompare(a.dueDate));
-  }, [invoices, invSearch, statusFilter]);
+      .sort((a, b) => {
+        const aVer = getProofSummary(a).hasPendingProof ? 0 : 1;
+        const bVer = getProofSummary(b).hasPendingProof ? 0 : 1;
+        if (aVer !== bVer) return aVer - bVer;
+        return b.dueDate.localeCompare(a.dueDate);
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invoices, paymentRequests, invSearch, statusFilter]);
 
   const invoiceTotals = useMemo(() => {
     let paid = 0;
@@ -260,20 +358,96 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
     let overdue = 0;
     for (const inv of invoices) {
       if (inv.status === 'Lunas') paid += inv.amount;
-      else if (inv.status === 'Belum Lunas') pending += inv.amount;
+      else if (inv.status === 'Belum Lunas' || inv.status === 'Menunggu Verifikasi')
+        pending += inv.amount;
       else if (inv.status === 'Jatuh Tempo') overdue += inv.amount;
     }
     return { paid, pending, overdue };
   }, [invoices]);
 
-  const pendingProofCount = invoices.filter(
-    (invoice) => invoice.paymentProofStatus === 'pending' && invoice.status !== 'Lunas'
-  ).length;
-
   const activeZeroFeeAthletesCount = useMemo(
     () => athletes.filter((a) => a.status === 'Aktif' && a.monthlyFee <= 0).length,
     [athletes]
   );
+
+  const buildPaymentRequestPayload = (params: {
+    invoiceId: string;
+    invoiceNumber: string;
+    athleteName: string;
+    periodMonth: string;
+    description: string;
+    amount: number;
+    dueDate: string;
+  }) => ({
+    clubId: club.id,
+    ownerId: userId,
+    clubName: clampString(club.name, LIMITS.club.nameMax),
+    clubCity: clampString(club.city, LIMITS.club.cityMax),
+    invoiceId: params.invoiceId,
+    invoiceNumber: params.invoiceNumber,
+    athleteName: params.athleteName,
+    periodMonth: params.periodMonth,
+    description: params.description,
+    amount: params.amount,
+    dueDate: params.dueDate,
+    status: 'Menunggu Pembayaran',
+    bankName: clampString(club.bankName || '', LIMITS.club.bankNameMax),
+    bankAccountNumber: clampString(club.bankAccountNumber || '', LIMITS.club.bankAccountNumberMax),
+    bankAccountHolder: clampString(club.bankAccountHolder || '', LIMITS.club.bankAccountHolderMax),
+    qrisPayload: clampString(club.qrisPayload || '', LIMITS.club.qrisPayloadMax),
+    qrisMerchantName: clampString(club.qrisMerchantName || '', LIMITS.club.qrisMerchantNameMax),
+    proofImageDataUrl: '',
+    payerName: '',
+    paymentMethod: '',
+    proofNote: '',
+    submittedAt: '',
+    verifiedAt: '',
+    rejectionReason: '',
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+
+  const ensurePaymentRequestForInvoice = async (inv: ClubInvoice): Promise<string> => {
+    const existingReq =
+      (inv.paymentToken ? paymentReqMaps.byId.get(inv.paymentToken) : undefined) ||
+      paymentReqMaps.byInvoiceId.get(inv.id);
+    if (existingReq && isValidPaymentTokenFormat(existingReq.id)) {
+      if (inv.paymentToken !== existingReq.id) {
+        await updateDoc(doc(db, 'invoices', inv.id), {
+          paymentToken: existingReq.id,
+          updatedAt: serverTimestamp(),
+        }).catch(() => {});
+      }
+      return existingReq.id;
+    }
+
+    const token = isValidPaymentTokenFormat(inv.paymentToken)
+      ? inv.paymentToken
+      : generatePaymentToken();
+    const batch = writeBatch(db);
+    batch.set(
+      doc(db, 'paymentRequests', token),
+      buildPaymentRequestPayload({
+        invoiceId: inv.id,
+        invoiceNumber: inv.invoiceNumber,
+        athleteName: inv.athleteName,
+        periodMonth: inv.periodMonth,
+        description: inv.description,
+        amount: inv.amount,
+        dueDate: inv.dueDate,
+      })
+    );
+    if (inv.paymentToken !== token) {
+      batch.update(doc(db, 'invoices', inv.id), {
+        paymentToken: token,
+        updatedAt: serverTimestamp(),
+      });
+    }
+    await batch
+      .commit()
+      .catch((err) => handleFirestoreError(err, OperationType.WRITE, `paymentRequests/${token}`));
+    return token;
+  };
 
   const openCreateInvoice = () => {
     const firstAth = athletes[0];
@@ -365,7 +539,10 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
 
     setSavingInv(true);
     try {
-      await addDoc(collection(db, 'invoices'), {
+      const invRef = doc(collection(db, 'invoices'));
+      const paymentToken = generatePaymentToken();
+      const batch = writeBatch(db);
+      batch.set(invRef, {
         clubId: club.id,
         ownerId: userId,
         invoiceNumber,
@@ -381,14 +558,32 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
         status: 'Belum Lunas',
         paidDate: '',
         paymentMethod: '',
+        paymentToken,
         notes: clampString(invNotes, LIMITS.invoice.notesMax),
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-      }).catch((err) => handleFirestoreError(err, OperationType.CREATE, 'invoices'));
+      });
+      batch.set(
+        doc(db, 'paymentRequests', paymentToken),
+        buildPaymentRequestPayload({
+          invoiceId: invRef.id,
+          invoiceNumber,
+          athleteName: cleanAthleteName,
+          periodMonth: cleanPeriod,
+          description: cleanDesc,
+          amount: roundedAmount,
+          dueDate: invDueDate,
+        })
+      );
+      await batch
+        .commit()
+        .catch((err) => handleFirestoreError(err, OperationType.CREATE, 'invoices'));
+
+      const paymentPortalUrl = buildPaymentPortalUrl(paymentToken);
       setCreateInvOpen(false);
       setWaModalData({
         title: 'Kirim Notifikasi Invoice ke Orang Tua',
-        description: `Invoice ${invoiceNumber} telah diterbitkan. Kirim pemberitahuan tagihan ke WhatsApp wali atlet.`,
+        description: `Invoice ${invoiceNumber} telah diterbitkan beserta tautan portal bayar & unggah bukti.`,
         recipients: [
           {
             id: invoiceNumber,
@@ -405,6 +600,7 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
               amount: roundedAmount,
               dueDate: invDueDate,
               status: 'Belum Lunas',
+              paymentPortalUrl,
             }),
           },
         ],
@@ -465,68 +661,91 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
     setBatchFieldErrors({});
     setSavingBatch(true);
     try {
-      const batch = writeBatch(db);
       const ym = batchDueDate.slice(0, 7).replace('-', '/');
       const createdRecipients: WhatsAppRecipientItem[] = [];
+      const CHUNK_SIZE = 180; // 2 writes per athlete = 360 ops < 500 Firestore batch cap
 
-      targets.forEach((ath, idx) => {
-        const seq = String(invoices.length + idx + 1).padStart(3, '0');
-        const invNumber = `INV/${ym}/SPP-${seq}`;
-        const ref = doc(collection(db, 'invoices'));
-        const cleanAthleteName = clampString(ath.fullName, LIMITS.athlete.fullNameMax);
-        const cleanParentName = clampString(ath.parentName || '', LIMITS.athlete.parentNameMax);
-        const cleanParentPhone = clampString(ath.parentPhone || '', LIMITS.athlete.parentPhoneMax);
-        const description = `Iuran Latihan Reguler ${ath.ageGroup} — ${cleanPeriod}`;
-        const roundedAmount = Math.round(ath.monthlyFee);
+      for (let start = 0; start < targets.length; start += CHUNK_SIZE) {
+        const chunk = targets.slice(start, start + CHUNK_SIZE);
+        const batch = writeBatch(db);
 
-        batch.set(ref, {
-          clubId: club.id,
-          ownerId: userId,
-          invoiceNumber: invNumber,
-          athleteId: ath.id,
-          athleteName: cleanAthleteName,
-          parentName: cleanParentName,
-          parentPhone: cleanParentPhone,
-          periodMonth: cleanPeriod,
-          category: 'Iuran Bulanan (SPP)',
-          description,
-          amount: roundedAmount,
-          dueDate: batchDueDate,
-          status: 'Belum Lunas',
-          paidDate: '',
-          paymentMethod: '',
-          notes: `Transfer ke ${club.bankName || 'Rekening Klub'} ${club.bankAccountNumber || ''}`.trim(),
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
+        chunk.forEach((ath, offset) => {
+          const idx = start + offset;
+          const seq = String(invoices.length + idx + 1).padStart(3, '0');
+          const invNumber = `INV/${ym}/SPP-${seq}`;
+          const ref = doc(collection(db, 'invoices'));
+          const paymentToken = generatePaymentToken();
+          const cleanAthleteName = clampString(ath.fullName, LIMITS.athlete.fullNameMax);
+          const cleanParentName = clampString(ath.parentName || '', LIMITS.athlete.parentNameMax);
+          const cleanParentPhone = clampString(ath.parentPhone || '', LIMITS.athlete.parentPhoneMax);
+          const description = `Iuran Latihan Reguler ${ath.ageGroup} — ${cleanPeriod}`;
+          const roundedAmount = Math.round(ath.monthlyFee);
 
-        createdRecipients.push({
-          id: invNumber,
-          athleteName: cleanAthleteName,
-          parentName: cleanParentName,
-          parentPhone: cleanParentPhone,
-          subtitle: `${invNumber} · ${formatRupiah(roundedAmount)}`,
-          message: buildInvoiceNotificationMessage(club, {
+          batch.set(ref, {
+            clubId: club.id,
+            ownerId: userId,
             invoiceNumber: invNumber,
+            athleteId: ath.id,
             athleteName: cleanAthleteName,
             parentName: cleanParentName,
-            description,
+            parentPhone: cleanParentPhone,
             periodMonth: cleanPeriod,
+            category: 'Iuran Bulanan (SPP)',
+            description,
             amount: roundedAmount,
             dueDate: batchDueDate,
             status: 'Belum Lunas',
-          }),
-        });
-      });
+            paidDate: '',
+            paymentMethod: '',
+            paymentToken,
+            notes: `Transfer ke ${club.bankName || 'Rekening Klub'} ${club.bankAccountNumber || ''}`.trim(),
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
 
-      await batch.commit().catch((err) =>
-        handleFirestoreError(err, OperationType.WRITE, 'invoices/batch_spp')
-      );
+          batch.set(
+            doc(db, 'paymentRequests', paymentToken),
+            buildPaymentRequestPayload({
+              invoiceId: ref.id,
+              invoiceNumber: invNumber,
+              athleteName: cleanAthleteName,
+              periodMonth: cleanPeriod,
+              description,
+              amount: roundedAmount,
+              dueDate: batchDueDate,
+            })
+          );
+
+          createdRecipients.push({
+            id: invNumber,
+            athleteName: cleanAthleteName,
+            parentName: cleanParentName,
+            parentPhone: cleanParentPhone,
+            subtitle: `${invNumber} · ${formatRupiah(roundedAmount)}`,
+            message: buildInvoiceNotificationMessage(club, {
+              invoiceNumber: invNumber,
+              athleteName: cleanAthleteName,
+              parentName: cleanParentName,
+              description,
+              periodMonth: cleanPeriod,
+              amount: roundedAmount,
+              dueDate: batchDueDate,
+              status: 'Belum Lunas',
+              paymentPortalUrl: buildPaymentPortalUrl(paymentToken),
+            }),
+          });
+        });
+
+        await batch
+          .commit()
+          .catch((err) => handleFirestoreError(err, OperationType.WRITE, 'invoices/batch_spp'));
+      }
+
       setBatchOpen(false);
       if (createdRecipients.length > 0) {
         setWaModalData({
           title: `Kirim Notifikasi SPP ${cleanPeriod}`,
-          description: `${createdRecipients.length} invoice SPP baru diterbitkan. Kirim tagihan langsung ke WhatsApp masing-masing orang tua.`,
+          description: `${createdRecipients.length} invoice SPP baru diterbitkan beserta tautan unggah bukti bayar orang tua.`,
           recipients: createdRecipients,
         });
       }
@@ -566,9 +785,28 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
     setPayFieldErrors({});
     setPaying(true);
     try {
-      const invoiceRef = doc(db, 'invoices', payModalInv.id);
-      const paymentRef = doc(db, 'transactions', `invoice_${payModalInv.id}`);
-      // Record matching income atomically with the invoice status.
+      const batch = writeBatch(db);
+      // 1. Update invoice to Lunas
+      batch.update(doc(db, 'invoices', payModalInv.id), {
+        status: 'Lunas',
+        paidDate: payDate,
+        paymentMethod: payMethod,
+        paymentRejectionReason: '',
+        notes: clampString(payNotes || payModalInv.notes || '', LIMITS.invoice.notesMax),
+        updatedAt: serverTimestamp(),
+      });
+
+      const { token } = getProofSummary(payModalInv);
+      if (token && paymentReqMaps.byId.has(token)) {
+        batch.update(doc(db, 'paymentRequests', token), {
+          status: 'Terverifikasi',
+          verifiedAt: new Date().toISOString(),
+          rejectionReason: '',
+          updatedAt: serverTimestamp(),
+        });
+      }
+
+      // 2. Automatically record matching Pemasukan in transactions
       const txCategory =
         payModalInv.category === 'Iuran Bulanan (SPP)'
           ? 'Iuran Bulanan (SPP)'
@@ -578,7 +816,7 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
           ? 'Perlengkapan & Atribut'
           : 'Lainnya';
 
-      const payment = {
+      batch.set(doc(collection(db, 'transactions')), {
         clubId: club.id,
         ownerId: userId,
         type: 'pemasukan',
@@ -596,22 +834,9 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
         invoiceId: payModalInv.id,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-      };
-      await runTransaction(db, async (transaction) => {
-        const snapshot = await transaction.get(invoiceRef);
-        if (!snapshot.exists() || !['Belum Lunas', 'Jatuh Tempo'].includes(snapshot.data().status)) {
-          throw new Error('Invoice ini sudah dilunasi atau tidak tersedia. Muat ulang daftar invoice.');
-        }
-        transaction.update(invoiceRef, {
-          status: 'Lunas',
-          ...(snapshot.data().paymentProofStatus === 'pending' ? { paymentProofStatus: 'verified' } : {}),
-          paidDate: payDate,
-          paymentMethod: payMethod,
-          notes: clampString(payNotes || payModalInv.notes || '', LIMITS.invoice.notesMax),
-          updatedAt: serverTimestamp(),
-        });
-        transaction.set(paymentRef, payment);
-      }).catch((err) =>
+      });
+
+      await batch.commit().catch((err) =>
         handleFirestoreError(err, OperationType.WRITE, `invoices/${payModalInv.id}`)
       );
       setPayModalInv(null);
@@ -622,89 +847,218 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
     }
   };
 
-  const handleUploadProof = async (inv: ClubInvoice, file?: File) => {
-    if (!file) return;
-    if (!['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(file.type) || file.size > 5 * 1024 * 1024) {
-      setListError('Bukti harus JPG, PNG, WebP atau PDF dengan ukuran maksimal 5 MB.');
-      return;
-    }
+  const handleQuickConfirmProof = async (inv: ClubInvoice) => {
+    if (inv.status === 'Lunas' || inv.status === 'Dibatalkan') return;
     setListError(null);
-    setProofBusyId(inv.id);
+    setProofActionError(null);
+    setQuickConfirmingId(inv.id);
     try {
-      const extension = file.type === 'application/pdf' ? 'pdf' : file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg';
-      const path = `payment-proofs/${userId}/${inv.id}/${crypto.randomUUID()}.${extension}`;
-      await uploadBytes(ref(storage, path), file, { contentType: file.type });
-      await updateDoc(doc(db, 'invoices', inv.id), {
-        paymentProofPath: path,
-        paymentProofStatus: 'pending',
-        paymentProofSubmittedAt: serverTimestamp(),
+      const { req, token, method, payerName } = getProofSummary(inv);
+      const resolvedMethod: PaymentMethod =
+        method === 'QRIS' ? 'QRIS' : method === 'Tunai' ? 'Tunai' : 'Transfer Bank';
+      const today = todayISO();
+      const batch = writeBatch(db);
+
+      batch.update(doc(db, 'invoices', inv.id), {
+        status: 'Lunas',
+        paidDate: today,
+        paymentMethod: resolvedMethod,
+        paymentRejectionReason: '',
+        notes: clampString(
+          inv.notes ||
+            (payerName
+              ? `Terverifikasi otomatis dari bukti bayar (${payerName})`
+              : 'Terverifikasi dari bukti pembayaran'),
+          LIMITS.invoice.notesMax
+        ),
         updatedAt: serverTimestamp(),
       });
-    } catch (err) {
-      setListError(err instanceof Error ? err.message : 'Gagal menyimpan bukti pembayaran.');
-    } finally {
-      setProofBusyId(null);
-    }
-  };
 
-  const handleViewProof = async (inv: ClubInvoice) => {
-    if (!inv.paymentProofPath) return;
-    setListError(null);
-    try {
-      const blob = await getBlob(ref(storage, inv.paymentProofPath));
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      document.body.append(link);
-      link.click();
-      link.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      if (token && (req || paymentReqMaps.byId.has(token))) {
+        batch.update(doc(db, 'paymentRequests', token), {
+          status: 'Terverifikasi',
+          verifiedAt: new Date().toISOString(),
+          rejectionReason: '',
+          updatedAt: serverTimestamp(),
+        });
+      }
+
+      const txCategory =
+        inv.category === 'Iuran Bulanan (SPP)'
+          ? 'Iuran Bulanan (SPP)'
+          : inv.category === 'Biaya Kejuaraan'
+          ? 'Pendaftaran Kejuaraan'
+          : inv.category === 'Seragam & Perlengkapan'
+          ? 'Perlengkapan & Atribut'
+          : 'Lainnya';
+
+      batch.set(doc(collection(db, 'transactions')), {
+        clubId: club.id,
+        ownerId: userId,
+        type: 'pemasukan',
+        category: txCategory,
+        description: clampString(
+          `Pelunasan ${inv.invoiceNumber} — ${inv.athleteName}`,
+          LIMITS.transaction.descriptionMax
+        ),
+        amount: inv.amount,
+        transactionDate: today,
+        paymentMethod: resolvedMethod,
+        referenceNo: clampString(inv.invoiceNumber, LIMITS.transaction.referenceNoMax),
+        athleteId: inv.athleteId,
+        athleteName: clampString(inv.athleteName, LIMITS.transaction.athleteNameMax),
+        invoiceId: inv.id,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      await batch
+        .commit()
+        .catch((err) => handleFirestoreError(err, OperationType.WRITE, `invoices/${inv.id}`));
+      if (proofModalInvId === inv.id) {
+        setProofModalInvId('');
+      }
     } catch (err) {
-      setListError(err instanceof Error ? err.message : 'Gagal membuka bukti pembayaran.');
+      const msg = err instanceof Error ? err.message : 'Gagal mengonfirmasi pelunasan cepat.';
+      setProofActionError(msg);
+      setListError(msg);
+    } finally {
+      setQuickConfirmingId(null);
     }
   };
 
   const handleRejectProof = async (inv: ClubInvoice) => {
-    setListError(null);
+    const cleanReason = clampString(rejectReason, LIMITS.invoice.paymentRejectionReasonMax);
+    if (cleanReason.length < 3) {
+      setProofActionError('Masukkan alasan penolakan minimal 3 karakter agar orang tua bisa mengunggah ulang.');
+      return;
+    }
+    setProofActionError(null);
+    setRejectingProof(true);
     try {
-      await updateDoc(doc(db, 'invoices', inv.id), {
-        paymentProofStatus: 'rejected', updatedAt: serverTimestamp(),
+      const { req, token } = getProofSummary(inv);
+      const batch = writeBatch(db);
+      batch.update(doc(db, 'invoices', inv.id), {
+        status: 'Belum Lunas',
+        paymentRejectionReason: cleanReason,
+        updatedAt: serverTimestamp(),
       });
+      if (token && (req || paymentReqMaps.byId.has(token))) {
+        batch.update(doc(db, 'paymentRequests', token), {
+          status: 'Ditolak',
+          rejectionReason: cleanReason,
+          updatedAt: serverTimestamp(),
+        });
+      }
+      await batch
+        .commit()
+        .catch((err) => handleFirestoreError(err, OperationType.WRITE, `invoices/${inv.id}`));
+      setRejectReason('');
+      setProofModalInvId('');
     } catch (err) {
-      setListError(err instanceof Error ? err.message : 'Gagal menolak bukti pembayaran.');
+      setProofActionError(err instanceof Error ? err.message : 'Gagal menolak bukti pembayaran.');
+    } finally {
+      setRejectingProof(false);
     }
   };
 
-  const proofActions = (inv: ClubInvoice) => (
-    <div className="flex flex-wrap items-center gap-2 text-xs">
-      {inv.paymentProofPath && (
-        <button type="button" onClick={() => void handleViewProof(inv)} className="text-sky-700 underline cursor-pointer">
-          Lihat bukti
-        </button>
-      )}
-      {inv.paymentProofStatus === 'pending' && inv.status !== 'Lunas' && (
-        <>
-          <span className="text-amber-700 font-semibold">Menunggu verifikasi</span>
-          <button type="button" onClick={() => {
-            setPayModalInv(inv); setPayDate(todayISO()); setPayMethod('Transfer Bank'); setPayNotes(''); setPayError(null); setPayFieldErrors({});
-          }} className="text-emerald-700 font-semibold underline cursor-pointer">Konfirmasi bayar</button>
-          <button type="button" onClick={() => void handleRejectProof(inv)} className="text-red-700 underline cursor-pointer">Tolak bukti</button>
-        </>
-      )}
-      {inv.paymentProofStatus === 'rejected' && <span className="text-red-700">Bukti ditolak</span>}
-      {(inv.status === 'Belum Lunas' || inv.status === 'Jatuh Tempo') && (
-        <label className="text-sky-700 underline cursor-pointer">
-          {proofBusyId === inv.id ? 'Mengunggah...' : inv.paymentProofPath ? 'Ganti bukti' : 'Unggah bukti dari orang tua'}
-          <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" className="sr-only"
-            disabled={proofBusyId === inv.id} onChange={(e) => {
-              void handleUploadProof(inv, e.target.files?.[0]); e.target.value = '';
-            }} />
-        </label>
-      )}
-    </div>
-  );
+  const handleOpenProofModal = (inv: ClubInvoice) => {
+    const info = getProofSummary(inv);
+    setProofActionError(null);
+    setRejectReason('');
+    setAdminProofImage(info.proofImage || '');
+    setAdminProofPayer(info.payerName || inv.parentName || '');
+    setAdminProofMethod(
+      PROOF_PAYMENT_METHODS.includes(info.method as ProofPaymentMethod)
+        ? (info.method as ProofPaymentMethod)
+        : 'Transfer Bank'
+    );
+    setAdminProofNote(info.note || '');
+    setProofModalInvId(inv.id);
+  };
+
+  const handleAdminProofFileSelected = async (file: File | null | undefined) => {
+    if (!file) return;
+    setProofActionError(null);
+    setAdminProofCompressing(true);
+    try {
+      const compressed = await compressPaymentProofImage(file);
+      setAdminProofImage(compressed);
+    } catch (err) {
+      setProofActionError(err instanceof Error ? err.message : 'Gagal memproses gambar bukti bayar.');
+    } finally {
+      setAdminProofCompressing(false);
+    }
+  };
+
+  const handleSaveAdminUploadedProof = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!proofModalInv) return;
+    const cleanPayer = clampString(adminProofPayer, LIMITS.invoice.proofPayerNameMax);
+    const cleanNote = clampString(adminProofNote, LIMITS.invoice.proofNoteMax);
+    if (!adminProofImage || !adminProofImage.startsWith('data:image/')) {
+      setProofActionError('Pilih gambar bukti pembayaran terlebih dahulu.');
+      return;
+    }
+    if (cleanPayer.length < 2) {
+      setProofActionError('Nama pengirim minimal 2 karakter.');
+      return;
+    }
+
+    setProofActionError(null);
+    setAdminProofSaving(true);
+    try {
+      const submittedAt = new Date().toISOString();
+      const { req, token } = getProofSummary(proofModalInv);
+      const batch = writeBatch(db);
+      batch.update(doc(db, 'invoices', proofModalInv.id), {
+        status: 'Menunggu Verifikasi',
+        proofImageDataUrl: adminProofImage,
+        proofPayerName: cleanPayer,
+        proofMethod: adminProofMethod,
+        proofNote: cleanNote,
+        proofSubmittedAt: submittedAt,
+        paymentRejectionReason: '',
+        updatedAt: serverTimestamp(),
+      });
+      if (token && (req || paymentReqMaps.byId.has(token))) {
+        batch.update(doc(db, 'paymentRequests', token), {
+          status: 'Menunggu Verifikasi',
+          proofImageDataUrl: adminProofImage,
+          payerName: cleanPayer,
+          paymentMethod: adminProofMethod,
+          proofNote: cleanNote,
+          submittedAt,
+          rejectionReason: '',
+          updatedAt: serverTimestamp(),
+        });
+      }
+      await batch
+        .commit()
+        .catch((err) =>
+          handleFirestoreError(err, OperationType.WRITE, `invoices/${proofModalInv.id}`)
+        );
+    } catch (err) {
+      setProofActionError(err instanceof Error ? err.message : 'Gagal menyimpan bukti bayar.');
+    } finally {
+      setAdminProofSaving(false);
+    }
+  };
+
+  const handleCopyParentPaymentLink = async (inv: ClubInvoice) => {
+    setListError(null);
+    try {
+      const token = await ensurePaymentRequestForInvoice(inv);
+      const url = buildPaymentPortalUrl(token);
+      if (url && navigator.clipboard) {
+        await navigator.clipboard.writeText(url);
+        setCopiedPortalInvId(inv.id);
+        setTimeout(() => setCopiedPortalInvId((prev) => (prev === inv.id ? null : prev)), 2500);
+      }
+    } catch (err) {
+      setListError(err instanceof Error ? err.message : 'Gagal membuat tautan bayar orang tua.');
+    }
+  };
 
   const handleMarkOverdue = async (inv: ClubInvoice) => {
     setListError(null);
@@ -726,6 +1080,10 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
     setListError(null);
     try {
       await deleteDoc(doc(db, 'invoices', inv.id));
+      const { req, token } = getProofSummary(inv);
+      if (token && (req || paymentReqMaps.byId.has(token))) {
+        await deleteDoc(doc(db, 'paymentRequests', token)).catch(() => {});
+      }
       setConfirmDeleteInvId(null);
     } catch (err) {
       try {
@@ -736,14 +1094,21 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
     }
   };
 
-  const openSingleInvoiceWhatsApp = (inv: ClubInvoice) => {
+  const openSingleInvoiceWhatsApp = async (inv: ClubInvoice) => {
     const linkedAthlete = athletes.find((a) => a.id === inv.athleteId);
     const parentName = inv.parentName || linkedAthlete?.parentName || '';
     const parentPhone = inv.parentPhone || linkedAthlete?.parentPhone || '';
+    let paymentPortalUrl = '';
+    try {
+      const token = await ensurePaymentRequestForInvoice(inv);
+      paymentPortalUrl = buildPaymentPortalUrl(token);
+    } catch {
+      // Proceed even if portal generation fails
+    }
 
     setWaModalData({
       title: `Kirim Tagihan ${inv.invoiceNumber}`,
-      description: `Kirim detail tagihan dan informasi pembayaran ${inv.athleteName} ke WhatsApp orang tua.`,
+      description: `Kirim detail tagihan, QRIS, dan tautan unggah bukti bayar ${inv.athleteName} ke WhatsApp orang tua.`,
       recipients: [
         {
           id: inv.id,
@@ -760,14 +1125,22 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
             amount: inv.amount,
             dueDate: inv.dueDate,
             status: inv.status,
+            paymentPortalUrl,
           }),
         },
       ],
     });
   };
 
-  const handleCopyWhatsAppReminder = (inv: ClubInvoice) => {
+  const handleCopyWhatsAppReminder = async (inv: ClubInvoice) => {
     const linkedAthlete = athletes.find((a) => a.id === inv.athleteId);
+    let paymentPortalUrl = '';
+    try {
+      const token = await ensurePaymentRequestForInvoice(inv);
+      paymentPortalUrl = buildPaymentPortalUrl(token);
+    } catch {
+      // Ignore
+    }
     const msg = buildInvoiceNotificationMessage(club, {
       invoiceNumber: inv.invoiceNumber,
       athleteName: inv.athleteName,
@@ -777,9 +1150,10 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
       amount: inv.amount,
       dueDate: inv.dueDate,
       status: inv.status,
+      paymentPortalUrl,
     });
 
-    navigator.clipboard.writeText(msg);
+    await navigator.clipboard.writeText(msg);
     setCopiedWa(true);
     setTimeout(() => setCopiedWa(false), 2000);
   };
@@ -1252,12 +1626,6 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
 
       {activeTab === 'invoices' && (
         <div className="space-y-5 no-print">
-          {pendingProofCount > 0 && (
-            <button type="button" onClick={() => setStatusFilter('proof-pending')}
-              className="w-full text-left rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-medium text-amber-900 cursor-pointer">
-              {pendingProofCount} bukti pembayaran menunggu verifikasi. Lihat tagihan →
-            </button>
-          )}
           {/* Summary KPI */}
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
             <div className="bg-white border border-slate-200 rounded-xl p-3.5 sm:p-5 min-w-0">
@@ -1280,6 +1648,105 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
             </div>
           </div>
 
+          {/* Automatic Payment Proof Verification Queue Banner */}
+          {pendingVerificationInvoices.length > 0 && (
+            <div className="bg-amber-50/90 border border-amber-300 rounded-xl p-4 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-start gap-2.5">
+                  <Clock className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
+                  <div>
+                    <h2 className="font-display text-sm font-bold text-amber-950">
+                      Deteksi Otomatis: {pendingVerificationInvoices.length} Bukti Bayar Menunggu Konfirmasi
+                    </h2>
+                    <p className="text-xs text-amber-800 mt-0.5">
+                      Orang tua telah mengunggah bukti transfer. Periksa gambar struk atau klik Konfirmasi Lunas 1-klik untuk memperbarui status & kas otomatis.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('Menunggu Verifikasi')}
+                  className="px-3 min-h-[36px] text-xs font-semibold text-amber-900 bg-white border border-amber-300 hover:bg-amber-100 rounded-lg cursor-pointer shrink-0"
+                >
+                  Filter Antrean ({pendingVerificationInvoices.length})
+                </button>
+              </div>
+
+              <div className="divide-y divide-amber-200/70 bg-white border border-amber-200 rounded-lg overflow-hidden">
+                {pendingVerificationInvoices.map((inv) => {
+                  const info = getProofSummary(inv);
+                  const busy = quickConfirmingId === inv.id;
+                  return (
+                    <div
+                      key={inv.id}
+                      className="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        {info.proofImage ? (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenProofModal(inv)}
+                            className="w-12 h-12 rounded-lg border border-slate-200 overflow-hidden bg-slate-50 shrink-0 cursor-pointer"
+                            title="Klik untuk memperbesar bukti bayar"
+                          >
+                            <img
+                              src={info.proofImage}
+                              alt={`Bukti ${inv.athleteName}`}
+                              className="w-full h-full object-cover"
+                            />
+                          </button>
+                        ) : (
+                          <div className="w-12 h-12 rounded-lg border border-amber-200 bg-amber-50 flex items-center justify-center shrink-0 text-amber-700">
+                            <ImagePlus className="w-5 h-5" />
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-slate-900 truncate">
+                            {inv.athleteName}{' '}
+                            <span className="font-mono-tabular text-xs font-normal text-slate-500">
+                              ({inv.invoiceNumber})
+                            </span>
+                          </div>
+                          <div className="text-xs text-slate-600 truncate">
+                            <span className="font-mono-tabular font-semibold text-slate-900">
+                              {formatRupiah(inv.amount)}
+                            </span>
+                            {info.payerName ? ` · Pengirim: ${info.payerName}` : ''}
+                            {info.method ? ` · ${info.method}` : ''}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenProofModal(inv)}
+                          className="inline-flex items-center gap-1.5 px-3 min-h-[40px] sm:min-h-[36px] text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg cursor-pointer"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          Periksa Bukti
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => handleQuickConfirmProof(inv)}
+                          className="inline-flex items-center gap-1.5 px-3.5 min-h-[40px] sm:min-h-[36px] text-xs font-semibold text-white bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 rounded-lg cursor-pointer"
+                        >
+                          {busy ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <ShieldCheck className="w-3.5 h-3.5" />
+                          )}
+                          Konfirmasi Lunas
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Filter Bar */}
           <div className="bg-white border border-slate-200 rounded-xl p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="relative flex-1 sm:max-w-sm">
@@ -1296,7 +1763,7 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
             <div className="w-full sm:w-56">
               <BottomSheetSelect
                 value={statusFilter}
-                onChange={setStatusFilter}
+                onChange={(val) => setStatusFilter(val as 'all' | typeof INVOICE_STATUSES[number])}
                 title="Filter Status Invoice"
                 subtitle="Saring daftar tagihan berdasarkan status pelunasan."
                 triggerPrefix="Status:"
@@ -1305,11 +1772,10 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                 resetLabel="Semua"
                 options={[
                   { value: 'all', label: 'Semua Status', badge: `${invoices.length}` },
-                  { value: 'proof-pending', label: 'Menunggu Verifikasi', badge: `${invoices.filter((i) => i.paymentProofStatus === 'pending' && i.status !== 'Lunas').length}` },
                   ...INVOICE_STATUSES.map((st) => ({
                     value: st,
                     label: st,
-                    badge: `${invoices.filter((i) => i.status === st).length}`,
+                    badge: `${invoices.filter((i) => getProofSummary(i).effectiveStatus === st).length}`,
                   })),
                 ]}
               />
@@ -1329,110 +1795,176 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
               <>
                 {/* Mobile Invoice Cards */}
                 <div className="md:hidden divide-y divide-slate-100">
-                  {filteredInvoices.map((inv) => (
-                    <div key={inv.id} className="p-4 space-y-2.5">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <div className="font-mono-tabular text-xs font-semibold text-slate-600">
-                            {inv.invoiceNumber}
+                  {filteredInvoices.map((inv) => {
+                    const proof = getProofSummary(inv);
+                    const isQuickBusy = quickConfirmingId === inv.id;
+                    return (
+                      <div
+                        key={inv.id}
+                        className={`p-4 space-y-2.5 ${
+                          proof.hasPendingProof ? 'bg-amber-50/35' : ''
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="font-mono-tabular text-xs font-semibold text-slate-600">
+                              {inv.invoiceNumber}
+                            </div>
+                            <div className="font-semibold text-sm text-slate-900 mt-0.5">
+                              {inv.athleteName}
+                            </div>
+                            <div className="text-xs text-slate-500 mt-0.5">
+                              {inv.description} · {inv.category}
+                            </div>
+                            {proof.hasPendingProof && (
+                              <div className="text-[11px] font-medium text-amber-800 mt-1">
+                                Bukti masuk{proof.payerName ? ` dari ${proof.payerName}` : ''} ({proof.method})
+                              </div>
+                            )}
                           </div>
-                          <div className="font-semibold text-sm text-slate-900 mt-0.5">
-                            {inv.athleteName}
+                          <div className="text-right shrink-0">
+                            <div className="font-mono-tabular text-sm font-bold text-slate-900">
+                              {formatRupiah(inv.amount)}
+                            </div>
+                            <div
+                              className={`text-xs font-medium mt-0.5 ${
+                                proof.effectiveStatus === 'Lunas'
+                                  ? 'text-emerald-700'
+                                  : proof.effectiveStatus === 'Menunggu Verifikasi'
+                                  ? 'text-sky-700'
+                                  : proof.effectiveStatus === 'Jatuh Tempo'
+                                  ? 'text-red-600'
+                                  : proof.effectiveStatus === 'Dibatalkan'
+                                  ? 'text-slate-400'
+                                  : 'text-amber-700'
+                              }`}
+                            >
+                              {proof.effectiveStatus}
+                            </div>
                           </div>
-                          <div className="text-xs text-slate-500 mt-0.5">
-                            {inv.description} · {inv.category}
-                          </div>
-                          {proofActions(inv)}
                         </div>
-                        <div className="text-right shrink-0">
-                          <div className="font-mono-tabular text-sm font-bold text-slate-900">
-                            {formatRupiah(inv.amount)}
-                          </div>
-                          <div
-                            className={`text-xs font-medium mt-0.5 ${
-                              inv.status === 'Lunas'
-                                ? 'text-emerald-700'
-                                : inv.status === 'Jatuh Tempo'
-                                ? 'text-red-600'
-                                : inv.status === 'Dibatalkan'
-                                ? 'text-slate-400'
-                                : 'text-amber-700'
-                            }`}
-                          >
-                            {inv.status}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-                        <span className="font-mono-tabular text-xs text-slate-500">
-                          Tempo {formatDateID(inv.dueDate)}
-                        </span>
-                        <div className="inline-flex flex-wrap items-center gap-1.5">
-                          {(inv.status === 'Belum Lunas' || inv.status === 'Jatuh Tempo') && (
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                          <span className="font-mono-tabular text-xs text-slate-500">
+                            Tempo {formatDateID(inv.dueDate)}
+                          </span>
+                          <div className="inline-flex flex-wrap items-center gap-1.5">
+                            {proof.hasPendingProof && (
+                              <>
+                                <button
+                                  type="button"
+                                  disabled={isQuickBusy}
+                                  onClick={() => handleQuickConfirmProof(inv)}
+                                  className="inline-flex items-center gap-1 px-3 min-h-[40px] text-xs font-semibold text-white bg-emerald-700 rounded-lg cursor-pointer disabled:opacity-60"
+                                >
+                                  <ShieldCheck className="w-3.5 h-3.5" />
+                                  {isQuickBusy ? 'Memproses...' : 'Konfirmasi Lunas'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenProofModal(inv)}
+                                  className="inline-flex items-center gap-1 px-3 min-h-[40px] text-xs font-medium text-sky-800 bg-sky-100 rounded-lg cursor-pointer"
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                  Periksa Bukti
+                                </button>
+                              </>
+                            )}
+                            {!proof.hasPendingProof &&
+                              (inv.status === 'Belum Lunas' || inv.status === 'Jatuh Tempo') && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setPayModalInv(inv);
+                                      setPayDate(todayISO());
+                                      setPayMethod('Transfer Bank');
+                                      setPayNotes('');
+                                      setPayError(null);
+                                      setPayFieldErrors({});
+                                    }}
+                                    className="px-3 min-h-[40px] text-xs font-medium text-emerald-700 bg-emerald-50 rounded-lg cursor-pointer"
+                                  >
+                                    Tandai Lunas
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenProofModal(inv)}
+                                    className="inline-flex items-center gap-1 px-3 min-h-[40px] text-xs font-medium text-amber-800 bg-amber-50 rounded-lg cursor-pointer"
+                                  >
+                                    <Upload className="w-3.5 h-3.5" />
+                                    Unggah Bukti
+                                  </button>
+                                </>
+                              )}
+                            {inv.status !== 'Dibatalkan' && inv.status !== 'Lunas' && (
+                              <button
+                                type="button"
+                                onClick={() => handleCopyParentPaymentLink(inv)}
+                                className="inline-flex items-center gap-1 px-3 min-h-[40px] text-xs font-medium text-slate-700 bg-slate-100 rounded-lg cursor-pointer"
+                              >
+                                {copiedPortalInvId === inv.id ? (
+                                  <>
+                                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                    Link Tersalin
+                                  </>
+                                ) : (
+                                  <>
+                                    <Link2 className="w-3.5 h-3.5" />
+                                    Link Bayar
+                                  </>
+                                )}
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => openSingleInvoiceWhatsApp(inv)}
+                              className="inline-flex items-center gap-1 px-3 min-h-[40px] text-xs font-medium text-emerald-700 bg-emerald-50 rounded-lg cursor-pointer"
+                            >
+                              <MessageCircle className="w-3.5 h-3.5" />
+                              Kirim WA
+                            </button>
                             <button
                               type="button"
                               onClick={() => {
-                                setPayModalInv(inv);
-                                setPayDate(todayISO());
-                                setPayMethod('Transfer Bank');
-                                setPayNotes('');
-                                setPayError(null);
-                                setPayFieldErrors({});
+                                setCopiedWa(false);
+                                setPreviewInvId(inv.id);
                               }}
-                              className="px-3 min-h-[40px] text-xs font-medium text-emerald-700 bg-emerald-50 rounded-lg cursor-pointer"
+                              className="inline-flex items-center gap-1 px-3 min-h-[40px] text-xs font-medium text-sky-700 bg-sky-50 rounded-lg cursor-pointer"
                             >
-                              Tandai Lunas
+                              <QrCode className="w-3.5 h-3.5" />
+                              QR / Cetak
                             </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => openSingleInvoiceWhatsApp(inv)}
-                            className="inline-flex items-center gap-1 px-3 min-h-[40px] text-xs font-medium text-emerald-700 bg-emerald-50 rounded-lg cursor-pointer"
-                          >
-                            <MessageCircle className="w-3.5 h-3.5" />
-                            Kirim WA
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setCopiedWa(false);
-                              setPreviewInv(inv);
-                            }}
-                            className="inline-flex items-center gap-1 px-3 min-h-[40px] text-xs font-medium text-sky-700 bg-sky-50 rounded-lg cursor-pointer"
-                          >
-                            <QrCode className="w-3.5 h-3.5" />
-                            QR / Cetak
-                          </button>
-                          {confirmDeleteInvId === inv.id ? (
-                            <div className="inline-flex items-center gap-1">
+                            {confirmDeleteInvId === inv.id ? (
+                              <div className="inline-flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteInvoice(inv)}
+                                  className="px-2.5 min-h-[40px] text-xs font-semibold text-white bg-red-600 rounded-lg cursor-pointer"
+                                >
+                                  Konfirmasi
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmDeleteInvId(null)}
+                                  className="px-2.5 min-h-[40px] text-xs font-medium text-slate-600 bg-slate-100 rounded-lg cursor-pointer"
+                                >
+                                  Batal
+                                </button>
+                              </div>
+                            ) : (
                               <button
                                 type="button"
-                                onClick={() => handleDeleteInvoice(inv)}
-                                className="px-2.5 min-h-[40px] text-xs font-semibold text-white bg-red-600 rounded-lg cursor-pointer"
+                                onClick={() => setConfirmDeleteInvId(inv.id)}
+                                className="px-3 min-h-[40px] text-xs font-medium text-red-700 bg-red-50 rounded-lg cursor-pointer"
                               >
-                                Konfirmasi
+                                Hapus
                               </button>
-                              <button
-                                type="button"
-                                onClick={() => setConfirmDeleteInvId(null)}
-                                className="px-2.5 min-h-[40px] text-xs font-medium text-slate-600 bg-slate-100 rounded-lg cursor-pointer"
-                              >
-                                Batal
-                              </button>
-                            </div>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => setConfirmDeleteInvId(inv.id)}
-                              className="px-3 min-h-[40px] text-xs font-medium text-red-700 bg-red-50 rounded-lg cursor-pointer"
-                            >
-                              Hapus
-                            </button>
-                          )}
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 {/* Desktop Invoice Table */}
@@ -1449,122 +1981,195 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-sm">
-                      {filteredInvoices.map((inv) => (
-                        <tr key={inv.id} className="hover:bg-slate-50/80">
-                          <td className="py-3 px-4 font-mono-tabular text-xs font-semibold text-slate-800 whitespace-nowrap">
-                            {inv.invoiceNumber}
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="font-medium text-slate-900">{inv.athleteName}</div>
-                            <div className="text-xs text-slate-500">
-                              {inv.description} · {inv.category}
-                            </div>
-                            {proofActions(inv)}
-                          </td>
-                          <td className="py-3 px-4 font-mono-tabular text-xs text-slate-600 whitespace-nowrap">
-                            {formatDateID(inv.dueDate)}
-                          </td>
-                          <td className="py-3 px-4 text-right font-mono-tabular font-semibold text-slate-900 whitespace-nowrap">
-                            {formatRupiah(inv.amount)}
-                          </td>
-                          <td className="py-3 px-4 text-xs font-medium whitespace-nowrap">
-                            <span
-                              className={
-                                inv.status === 'Lunas'
-                                  ? 'text-emerald-700'
-                                  : inv.status === 'Jatuh Tempo'
-                                  ? 'text-red-600'
-                                  : inv.status === 'Dibatalkan'
-                                  ? 'text-slate-400'
-                                  : 'text-amber-700'
-                              }
-                            >
-                              {inv.status}
-                            </span>
-                            {inv.paidDate && (
-                              <div className="font-mono-tabular text-[11px] text-slate-400">
-                                Lunas {formatDateID(inv.paidDate)}
+                      {filteredInvoices.map((inv) => {
+                        const proof = getProofSummary(inv);
+                        const isQuickBusy = quickConfirmingId === inv.id;
+                        return (
+                          <tr
+                            key={inv.id}
+                            className={
+                              proof.hasPendingProof ? 'bg-amber-50/35 hover:bg-amber-50/60' : 'hover:bg-slate-50/80'
+                            }
+                          >
+                            <td className="py-3 px-4 font-mono-tabular text-xs font-semibold text-slate-800 whitespace-nowrap">
+                              {inv.invoiceNumber}
+                            </td>
+                            <td className="py-3 px-4">
+                              <div className="font-medium text-slate-900">{inv.athleteName}</div>
+                              <div className="text-xs text-slate-500">
+                                {inv.description} · {inv.category}
                               </div>
-                            )}
-                          </td>
-                          <td className="py-3 px-4 text-right whitespace-nowrap">
-                            <div className="inline-flex items-center gap-1.5">
-                              {(inv.status === 'Belum Lunas' || inv.status === 'Jatuh Tempo') && (
+                              {proof.hasPendingProof && (
+                                <div className="text-[11px] font-medium text-amber-800 mt-0.5">
+                                  Bukti masuk{proof.payerName ? `: ${proof.payerName}` : ''} ({proof.method})
+                                </div>
+                              )}
+                            </td>
+                            <td className="py-3 px-4 font-mono-tabular text-xs text-slate-600 whitespace-nowrap">
+                              {formatDateID(inv.dueDate)}
+                            </td>
+                            <td className="py-3 px-4 text-right font-mono-tabular font-semibold text-slate-900 whitespace-nowrap">
+                              {formatRupiah(inv.amount)}
+                            </td>
+                            <td className="py-3 px-4 text-xs font-medium whitespace-nowrap">
+                              <span
+                                className={
+                                  proof.effectiveStatus === 'Lunas'
+                                    ? 'text-emerald-700'
+                                    : proof.effectiveStatus === 'Menunggu Verifikasi'
+                                    ? 'text-sky-700 font-semibold'
+                                    : proof.effectiveStatus === 'Jatuh Tempo'
+                                    ? 'text-red-600'
+                                    : proof.effectiveStatus === 'Dibatalkan'
+                                    ? 'text-slate-400'
+                                    : 'text-amber-700'
+                                }
+                              >
+                                {proof.effectiveStatus}
+                              </span>
+                              {inv.paidDate && (
+                                <div className="font-mono-tabular text-[11px] text-slate-400">
+                                  Lunas {formatDateID(inv.paidDate)}
+                                </div>
+                              )}
+                            </td>
+                            <td className="py-3 px-4 text-right whitespace-nowrap">
+                              <div className="inline-flex items-center gap-1.5">
+                                {proof.hasPendingProof && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      disabled={isQuickBusy}
+                                      onClick={() => handleQuickConfirmProof(inv)}
+                                      className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-white bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 rounded cursor-pointer"
+                                      title="Konfirmasi Cepat Lunas & Catat ke Kas"
+                                    >
+                                      <ShieldCheck className="w-3.5 h-3.5" />
+                                      {isQuickBusy ? '...' : 'Konfirmasi Lunas'}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenProofModal(inv)}
+                                      className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-sky-800 bg-sky-50 hover:bg-sky-100 rounded cursor-pointer"
+                                      title="Periksa Foto Bukti Bayar"
+                                    >
+                                      <Eye className="w-3.5 h-3.5" />
+                                      Bukti
+                                    </button>
+                                  </>
+                                )}
+                                {!proof.hasPendingProof &&
+                                  (inv.status === 'Belum Lunas' || inv.status === 'Jatuh Tempo') && (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setPayModalInv(inv);
+                                          setPayDate(todayISO());
+                                          setPayMethod('Transfer Bank');
+                                          setPayNotes('');
+                                          setPayError(null);
+                                          setPayFieldErrors({});
+                                        }}
+                                        className="px-2.5 py-1 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded cursor-pointer"
+                                      >
+                                        Tandai Lunas
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenProofModal(inv)}
+                                        className="p-1.5 text-amber-700 hover:bg-amber-50 rounded cursor-pointer"
+                                        title="Unggah bukti bayar dari orang tua"
+                                      >
+                                        <Upload className="w-4 h-4" />
+                                      </button>
+                                    </>
+                                  )}
+                                {inv.status === 'Lunas' && proof.proofImage && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenProofModal(inv)}
+                                    className="p-1.5 text-slate-500 hover:text-sky-700 hover:bg-sky-50 rounded cursor-pointer"
+                                    title="Lihat bukti pembayaran"
+                                  >
+                                    <Eye className="w-4 h-4" />
+                                  </button>
+                                )}
+                                {inv.status === 'Belum Lunas' && !proof.hasPendingProof && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleMarkOverdue(inv)}
+                                    className="px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50 rounded cursor-pointer"
+                                    title="Tandai Jatuh Tempo"
+                                  >
+                                    Jatuh Tempo
+                                  </button>
+                                )}
+                                {inv.status !== 'Dibatalkan' && inv.status !== 'Lunas' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopyParentPaymentLink(inv)}
+                                    className="p-1.5 text-slate-600 hover:text-sky-700 hover:bg-sky-50 rounded cursor-pointer"
+                                    title="Salin tautan bayar & upload bukti untuk orang tua"
+                                  >
+                                    {copiedPortalInvId === inv.id ? (
+                                      <Check className="w-4 h-4 text-emerald-600" />
+                                    ) : (
+                                      <Link2 className="w-4 h-4" />
+                                    )}
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => openSingleInvoiceWhatsApp(inv)}
+                                  className="p-1.5 text-emerald-700 hover:bg-emerald-50 rounded cursor-pointer"
+                                  title="Kirim notifikasi WhatsApp orang tua"
+                                >
+                                  <MessageCircle className="w-4 h-4" />
+                                </button>
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    setPayModalInv(inv);
-                                    setPayDate(todayISO());
-                                    setPayMethod('Transfer Bank');
-                                    setPayNotes('');
-                                    setPayError(null);
-                                    setPayFieldErrors({});
+                                    setCopiedWa(false);
+                                    setPreviewInvId(inv.id);
                                   }}
-                                  className="px-2.5 py-1 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded cursor-pointer"
+                                  className="p-1.5 text-slate-500 hover:text-sky-700 rounded hover:bg-sky-50 cursor-pointer"
+                                  title="Lihat QRIS & Cetak Invoice"
                                 >
-                                  Tandai Lunas
+                                  <Printer className="w-4 h-4" />
                                 </button>
-                              )}
-                              {inv.status === 'Belum Lunas' && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleMarkOverdue(inv)}
-                                  className="px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50 rounded cursor-pointer"
-                                  title="Tandai Jatuh Tempo"
-                                >
-                                  Jatuh Tempo
-                                </button>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => openSingleInvoiceWhatsApp(inv)}
-                                className="p-1.5 text-emerald-700 hover:bg-emerald-50 rounded cursor-pointer"
-                                title="Kirim notifikasi WhatsApp orang tua"
-                              >
-                                <MessageCircle className="w-4 h-4" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setCopiedWa(false);
-                                  setPreviewInv(inv);
-                                }}
-                                className="p-1.5 text-slate-500 hover:text-sky-700 rounded hover:bg-sky-50 cursor-pointer"
-                                title="Lihat QRIS & Cetak Invoice"
-                              >
-                                <Printer className="w-4 h-4" />
-                              </button>
-                              {confirmDeleteInvId === inv.id ? (
-                                <span className="inline-flex items-center gap-1 ml-1">
+                                {confirmDeleteInvId === inv.id ? (
+                                  <span className="inline-flex items-center gap-1 ml-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteInvoice(inv)}
+                                      className="px-2 py-1 text-[11px] font-semibold text-white bg-red-600 rounded hover:bg-red-700 cursor-pointer"
+                                    >
+                                      Hapus
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setConfirmDeleteInvId(null)}
+                                      className="px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-100 rounded cursor-pointer"
+                                    >
+                                      Batal
+                                    </button>
+                                  </span>
+                                ) : (
                                   <button
                                     type="button"
-                                    onClick={() => handleDeleteInvoice(inv)}
-                                    className="px-2 py-1 text-[11px] font-semibold text-white bg-red-600 rounded hover:bg-red-700 cursor-pointer"
+                                    onClick={() => setConfirmDeleteInvId(inv.id)}
+                                    className="p-1.5 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 cursor-pointer"
+                                    title="Hapus invoice"
                                   >
-                                    Hapus
+                                    <Trash2 className="w-4 h-4" />
                                   </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setConfirmDeleteInvId(null)}
-                                    className="px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-100 rounded cursor-pointer"
-                                  >
-                                    Batal
-                                  </button>
-                                </span>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => setConfirmDeleteInvId(inv.id)}
-                                  className="p-1.5 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 cursor-pointer"
-                                  title="Hapus invoice"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -1613,7 +2218,7 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                   <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
                     <button
                       type="button"
-                      onClick={() => setPreviewAnn(ann)}
+                      onClick={() => setPreviewAnnId(ann.id)}
                       className="inline-flex items-center gap-1.5 min-h-[36px] text-xs font-medium text-sky-700 hover:text-sky-800 cursor-pointer"
                     >
                       <Printer className="w-3.5 h-3.5" />
@@ -2539,6 +3144,23 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                 </button>
                 <button
                   type="button"
+                  onClick={() => handleCopyParentPaymentLink(previewInv)}
+                  className="inline-flex items-center gap-2 px-3.5 min-h-[40px] text-xs font-medium text-sky-800 bg-sky-50 border border-sky-200 rounded-lg hover:bg-sky-100 cursor-pointer"
+                >
+                  {copiedPortalInvId === previewInv.id ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                      Link Bayar Tersalin
+                    </>
+                  ) : (
+                    <>
+                      <Link2 className="w-3.5 h-3.5" />
+                      Salin Link Bayar
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
                   onClick={() => handleCopyWhatsAppReminder(previewInv)}
                   className="inline-flex items-center gap-2 px-3.5 min-h-[40px] text-xs font-medium text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer"
                 >
@@ -2557,7 +3179,7 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
               </div>
               <button
                 type="button"
-                onClick={() => setPreviewInv(null)}
+                onClick={() => setPreviewInvId('')}
                 className="p-2 text-slate-400 hover:text-slate-700 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
                 aria-label="Tutup pratinjau invoice"
               >
@@ -2675,7 +3297,7 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
                     athleteName={previewInv.athleteName}
                     periodMonth={previewInv.periodMonth}
                     onOpenQrisSettings={() => {
-                      setPreviewInv(null);
+                      setPreviewInvId('');
                       setActiveTab('settings');
                     }}
                   />
@@ -2685,6 +3307,229 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Proof Inspection & Quick Confirm / Admin Upload Modal (?inv_bukti=<id>) */}
+      {proofModalInv && (() => {
+        const proof = getProofSummary(proofModalInv);
+        const busyConfirm = quickConfirmingId === proofModalInv.id;
+        return (
+          <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-[1px] flex items-end sm:items-center justify-center p-0 sm:p-4 no-print">
+            <div className="bg-white border border-slate-200 rounded-t-2xl sm:rounded-xl w-full max-w-lg max-h-[92vh] overflow-y-auto p-4 sm:p-6 pb-safe space-y-4">
+              <div className="sm:hidden w-10 h-1 bg-slate-300 rounded-full mx-auto -mt-1" />
+              <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+                <div>
+                  <h2 className="font-display text-base sm:text-lg font-semibold text-slate-900">
+                    Verifikasi & Bukti Pembayaran
+                  </h2>
+                  <p className="text-xs font-mono-tabular text-slate-500 mt-0.5">
+                    {proofModalInv.invoiceNumber} · {proofModalInv.athleteName}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setProofModalInvId('')}
+                  className="p-2 text-slate-400 hover:text-slate-700 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
+                  aria-label="Tutup modal bukti bayar"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {proofActionError && (
+                <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-xs text-red-800 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
+                  <span>{proofActionError}</span>
+                </div>
+              )}
+
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-xs text-slate-500">{proofModalInv.description}</div>
+                  <div className="font-mono-tabular text-lg font-bold text-slate-900 mt-0.5">
+                    {formatRupiah(proofModalInv.amount)}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-[11px] text-slate-400">Status Saat Ini</div>
+                  <div className="text-xs font-semibold text-sky-700 mt-0.5">
+                    {proof.effectiveStatus}
+                  </div>
+                </div>
+              </div>
+
+              {proof.proofImage ? (
+                <div className="space-y-3">
+                  <div className="border border-slate-200 rounded-xl p-2.5 bg-slate-50">
+                    <img
+                      src={proof.proofImage}
+                      alt={`Bukti bayar ${proofModalInv.athleteName}`}
+                      className="max-h-72 mx-auto rounded-lg object-contain bg-white"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2.5 text-xs bg-slate-50 border border-slate-200 rounded-lg p-3">
+                    <div>
+                      <span className="text-slate-400 block">Pengirim</span>
+                      <span className="font-semibold text-slate-900">
+                        {proof.payerName || '-'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block">Metode</span>
+                      <span className="font-semibold text-slate-900">{proof.method}</span>
+                    </div>
+                    {proof.submittedAt && (
+                      <div className="col-span-2">
+                        <span className="text-slate-400 block">Diunggah pada</span>
+                        <span className="font-mono-tabular text-slate-700">
+                          {new Date(proof.submittedAt).toLocaleString('id-ID')}
+                        </span>
+                      </div>
+                    )}
+                    {proof.note && (
+                      <div className="col-span-2">
+                        <span className="text-slate-400 block">Catatan</span>
+                        <span className="text-slate-800">{proof.note}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {proofModalInv.status !== 'Lunas' && proofModalInv.status !== 'Dibatalkan' && (
+                    <div className="space-y-3 pt-1">
+                      <button
+                        type="button"
+                        disabled={busyConfirm}
+                        onClick={() => handleQuickConfirmProof(proofModalInv)}
+                        className="w-full inline-flex items-center justify-center gap-2 px-4 min-h-[46px] text-sm font-semibold text-white bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 rounded-xl cursor-pointer"
+                      >
+                        {busyConfirm ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <ShieldCheck className="w-4 h-4" />
+                        )}
+                        Konfirmasi Cepat Lunas & Catat Pemasukan
+                      </button>
+
+                      <div className="p-3 rounded-xl border border-slate-200 bg-slate-50/70 space-y-2.5">
+                        <label className="block text-xs font-medium text-slate-700">
+                          Jika bukti kurang jelas / nominal salah (Tolak & Minta Upload Ulang):
+                        </label>
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <input
+                            type="text"
+                            maxLength={LIMITS.invoice.paymentRejectionReasonMax}
+                            value={rejectReason}
+                            onChange={(e) => setRejectReason(e.target.value)}
+                            placeholder="Alasan (misal: Nominal tidak sesuai)"
+                            className="flex-1 px-3 min-h-[40px] text-sm sm:text-xs bg-white border border-slate-200 rounded-lg"
+                          />
+                          <button
+                            type="button"
+                            disabled={rejectingProof}
+                            onClick={() => handleRejectProof(proofModalInv)}
+                            className="inline-flex items-center justify-center gap-1.5 px-3.5 min-h-[40px] text-xs font-medium text-red-700 bg-red-50 border border-red-200 hover:bg-red-100 rounded-lg cursor-pointer disabled:opacity-60 shrink-0"
+                          >
+                            <XCircle className="w-3.5 h-3.5" />
+                            {rejectingProof ? 'Memproses...' : 'Tolak Bukti'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <form onSubmit={handleSaveAdminUploadedProof} className="space-y-3.5">
+                  <p className="text-xs text-slate-600">
+                    Belum ada bukti yang diunggah orang tua. Jika wali atlet mengirim foto bukti transfer melalui WhatsApp, unggah di sini agar tercatat & siap dikonfirmasi.
+                  </p>
+
+                  <label className="block border-2 border-dashed border-slate-300 hover:border-sky-600 rounded-xl p-4 text-center cursor-pointer bg-slate-50/50">
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        e.target.value = '';
+                        handleAdminProofFileSelected(f);
+                      }}
+                      className="sr-only"
+                    />
+                    {adminProofCompressing ? (
+                      <div className="py-4 flex flex-col items-center gap-1.5 text-slate-600">
+                        <Loader2 className="w-5 h-5 animate-spin text-sky-700" />
+                        <span className="text-xs">Mengompres foto bukti...</span>
+                      </div>
+                    ) : adminProofImage ? (
+                      <div className="space-y-2">
+                        <img
+                          src={adminProofImage}
+                          alt="Pratinjau bukti bayar"
+                          className="max-h-52 mx-auto rounded-lg object-contain bg-white border border-slate-200"
+                        />
+                        <div className="text-xs font-medium text-sky-700">Ganti foto bukti</div>
+                      </div>
+                    ) : (
+                      <div className="py-4 flex flex-col items-center gap-1 text-slate-600">
+                        <Upload className="w-6 h-6 text-sky-700" />
+                        <span className="text-xs font-medium text-slate-800">
+                          Pilih Foto / Screenshot Bukti Bayar
+                        </span>
+                      </div>
+                    )}
+                  </label>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 mb-1">
+                        Nama Pengirim *
+                      </label>
+                      <input
+                        type="text"
+                        maxLength={LIMITS.invoice.proofPayerNameMax}
+                        value={adminProofPayer}
+                        onChange={(e) => setAdminProofPayer(e.target.value)}
+                        className="w-full px-3 min-h-[42px] sm:min-h-[38px] text-sm border border-slate-200 rounded-lg"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 mb-1">
+                        Metode Bayar *
+                      </label>
+                      <BottomSheetSelect
+                        value={adminProofMethod}
+                        onChange={(v) => setAdminProofMethod(v as ProofPaymentMethod)}
+                        title="Metode Pembayaran"
+                        options={PROOF_PAYMENT_METHODS.map((m) => ({ value: m, label: m }))}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">
+                      Catatan (Opsional)
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={LIMITS.invoice.proofNoteMax}
+                      value={adminProofNote}
+                      onChange={(e) => setAdminProofNote(e.target.value)}
+                      placeholder="Contoh: Diterima via WA Admin"
+                      className="w-full px-3 min-h-[42px] sm:min-h-[38px] text-sm border border-slate-200 rounded-lg"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={adminProofSaving || adminProofCompressing || !adminProofImage}
+                    className="w-full min-h-[44px] bg-sky-700 hover:bg-sky-800 disabled:opacity-50 text-white text-xs font-semibold rounded-xl cursor-pointer"
+                  >
+                    {adminProofSaving ? 'Menyimpan Bukti...' : 'Simpan Bukti & Tandai Menunggu Verifikasi'}
+                  </button>
+                </form>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Create Announcement Modal (Bottom sheet on mobile) */}
       {annModalOpen && (
@@ -2880,7 +3725,7 @@ export const InvoicesAndAdminView: React.FC<InvoicesAndAdminViewProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => setPreviewAnn(null)}
+                onClick={() => setPreviewAnnId('')}
                 className="p-2 text-slate-400 hover:text-slate-700 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
                 aria-label="Tutup pratinjau dokumen"
               >

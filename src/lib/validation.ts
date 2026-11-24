@@ -364,6 +364,11 @@ export const LIMITS = {
     periodMonthMax: entities.Invoice.properties.periodMonth.maxLength ?? 30,
     descriptionMin: entities.Invoice.properties.description.minLength ?? 2,
     descriptionMax: entities.Invoice.properties.description.maxLength ?? 200,
+    paymentTokenMax: entities.Invoice.properties.paymentToken.maxLength ?? 64,
+    proofImageMax: entities.Invoice.properties.proofImageDataUrl.maxLength ?? 200000,
+    proofPayerNameMax: entities.Invoice.properties.proofPayerName.maxLength ?? 100,
+    proofNoteMax: entities.Invoice.properties.proofNote.maxLength ?? 300,
+    paymentRejectionReasonMax: entities.Invoice.properties.paymentRejectionReason.maxLength ?? 200,
     notesMax: entities.Invoice.properties.notes.maxLength ?? 300,
   },
   attendance: {

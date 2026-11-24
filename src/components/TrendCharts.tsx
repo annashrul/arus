@@ -12,6 +12,7 @@ import {
 } from '../types/club';
 import { Filter, TrendingDown, TrendingUp, Users } from 'lucide-react';
 import { BottomSheetSelect } from './BottomSheetSelect';
+import { useQueryParam } from '../lib/useQueryParams';
 
 interface CashflowTrendChartProps {
   transactions: FinanceTransaction[];
@@ -800,15 +801,34 @@ export const AthleteCompetitionChart: React.FC<AthleteCompetitionChartProps> = (
   compact = false,
   onQuickAddTime,
 }) => {
-  const [chartMode, setChartMode] = useState<'per_athlete' | 'compare_athletes'>('per_athlete');
-  const [selectedAthleteId, setSelectedAthleteId] = useState<string>('');
-  const [selectedEventKey, setSelectedEventKey] = useState<string>('');
-  const [activeMeetIdx, setActiveMeetIdx] = useState<number | null>(null);
+  const [qpChartMode, setQpChartMode] = useQueryParam<'per_athlete' | 'compare_athletes'>(
+    'ac_mode',
+    'per_athlete',
+    { allowed: ['per_athlete', 'compare_athletes'] }
+  );
+  const [qpAthleteId, setQpAthleteId] = useQueryParam('ac_ath', '');
+  const [qpEventKey, setQpEventKey] = useQueryParam('ac_ev', '');
+  const [qpCompareEventKey, setQpCompareEventKey] = useQueryParam('ac_cev', '');
+  const [qpCompareIdsRaw, setQpCompareIdsRaw] = useQueryParam('ac_cids', '');
 
-  // Compare-athletes mode states
-  const [compareEventKey, setCompareEventKey] = useState<string>('');
-  const [compareAthleteIds, setCompareAthleteIds] = useState<string[]>([]);
+  // Local fallback state when rendered inside an athlete detail drawer (lockedAthleteId)
+  const [localEventKey, setLocalEventKey] = useState<string>('');
+  const [activeMeetIdx, setActiveMeetIdx] = useState<number | null>(null);
   const [activeCompareIdx, setActiveCompareIdx] = useState<number | null>(null);
+
+  const chartMode = lockedAthleteId ? 'per_athlete' : qpChartMode;
+  const setChartMode = setQpChartMode;
+  const selectedAthleteId = lockedAthleteId ? '' : qpAthleteId;
+  const setSelectedAthleteId = setQpAthleteId;
+  const selectedEventKey = lockedAthleteId ? localEventKey : qpEventKey;
+  const setSelectedEventKey = lockedAthleteId ? setLocalEventKey : setQpEventKey;
+  const compareEventKey = qpCompareEventKey;
+  const setCompareEventKey = setQpCompareEventKey;
+  const compareAthleteIds = useMemo(
+    () => (qpCompareIdsRaw ? qpCompareIdsRaw.split(',').filter(Boolean) : []),
+    [qpCompareIdsRaw]
+  );
+  const setCompareAthleteIds = (ids: string[]) => setQpCompareIdsRaw(ids.join(','));
 
   // Athletes ordered by number of swim records (those with multi-meet history first)
   const athleteOptions = useMemo(() => {

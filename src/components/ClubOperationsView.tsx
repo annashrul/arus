@@ -1,4 +1,3 @@
-import { useUrlState } from '../lib/urlState';
 import React, { useMemo, useState } from 'react';
 import {
   addDoc,
@@ -61,6 +60,7 @@ import {
 import { ExportActionMenu } from './ExportActionMenu';
 import { BottomSheetSelect } from './BottomSheetSelect';
 import { CoachAnalyticsCharts } from './CoachAnalyticsCharts';
+import { useQueryParam } from '../lib/useQueryParams';
 import {
   AlertTriangle,
   Award,
@@ -108,15 +108,18 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
   swimTimes = [],
   onOpenPrint,
 }) => {
-  const [activeTab, setActiveTab] = useUrlState<ClubOpsTab>('clubops.tab', 'coaches', { values: ['coaches', 'pools', 'equipment', 'competitions'], history: 'push' });
+  const [activeTab, setActiveTab] = useQueryParam<ClubOpsTab>('kl_tab', 'coaches', {
+    allowed: ['coaches', 'pools', 'equipment', 'competitions'],
+    history: 'push',
+  });
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   // =========================
   // 1. COACHES STATE & FILTER
   // =========================
-  const [coachSearch, setCoachSearch] = useUrlState<string>('clubops.coach.q', '');
-  const [coachRoleFilter, setCoachRoleFilter] = useUrlState<string>('clubops.coach.role', 'ALL');
-  const [coachStatusFilter, setCoachStatusFilter] = useUrlState<string>('clubops.coach.status', 'ALL');
+  const [coachSearch, setCoachSearch] = useQueryParam('pl_q', '');
+  const [coachRoleFilter, setCoachRoleFilter] = useQueryParam('pl_peran', 'ALL');
+  const [coachStatusFilter, setCoachStatusFilter] = useQueryParam('pl_status', 'ALL');
 
   const [coachModalOpen, setCoachModalOpen] = useState(false);
   const [editingCoach, setEditingCoach] = useState<Coach | null>(null);
@@ -138,9 +141,9 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
   // =========================
   // 2. POOLS STATE & FILTER
   // =========================
-  const [poolSearch, setPoolSearch] = useUrlState<string>('clubops.pool.q', '');
-  const [poolTypeFilter, setPoolTypeFilter] = useUrlState<string>('clubops.pool.type', 'ALL');
-  const [poolStatusFilter, setPoolStatusFilter] = useUrlState<string>('clubops.pool.status', 'ALL');
+  const [poolSearch, setPoolSearch] = useQueryParam('km_q', '');
+  const [poolTypeFilter, setPoolTypeFilter] = useQueryParam('km_tipe', 'ALL');
+  const [poolStatusFilter, setPoolStatusFilter] = useQueryParam('km_status', 'ALL');
 
   const [poolModalOpen, setPoolModalOpen] = useState(false);
   const [editingPool, setEditingPool] = useState<PoolFacility | null>(null);
@@ -160,9 +163,9 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
   // =========================
   // 3. EQUIPMENT STATE & FILTER
   // =========================
-  const [eqSearch, setEqSearch] = useUrlState<string>('clubops.equipment.q', '');
-  const [eqCatFilter, setEqCatFilter] = useUrlState<string>('clubops.equipment.category', 'ALL');
-  const [eqCondFilter, setEqCondFilter] = useUrlState<string>('clubops.equipment.condition', 'ALL');
+  const [eqSearch, setEqSearch] = useQueryParam('al_q', '');
+  const [eqCatFilter, setEqCatFilter] = useQueryParam('al_kat', 'ALL');
+  const [eqCondFilter, setEqCondFilter] = useQueryParam('al_kondisi', 'ALL');
 
   const [eqModalOpen, setEqModalOpen] = useState(false);
   const [editingEq, setEditingEq] = useState<EquipmentItem | null>(null);
@@ -182,9 +185,9 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
   // =========================
   // 4. COMPETITIONS STATE & FILTER
   // =========================
-  const [compSearch, setCompSearch] = useUrlState<string>('clubops.competition.q', '');
-  const [compLevelFilter, setCompLevelFilter] = useUrlState<string>('clubops.competition.level', 'ALL');
-  const [compStatusFilter, setCompStatusFilter] = useUrlState<string>('clubops.competition.status', 'ALL');
+  const [compSearch, setCompSearch] = useQueryParam('lb_q', '');
+  const [compLevelFilter, setCompLevelFilter] = useQueryParam('lb_tingkat', 'ALL');
+  const [compStatusFilter, setCompStatusFilter] = useQueryParam('lb_status', 'ALL');
 
   const [compModalOpen, setCompModalOpen] = useState(false);
   const [editingComp, setEditingComp] = useState<ClubCompetition | null>(null);

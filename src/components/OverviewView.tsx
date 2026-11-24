@@ -13,6 +13,7 @@ import {
   FinanceTransaction,
   formatDateID,
   formatRupiah,
+  PaymentRequest,
   PoolFacility,
   SwimTime,
   todayISO,
@@ -59,6 +60,7 @@ interface OverviewViewProps {
   schedules: TrainingSchedule[];
   attendance: AttendanceRecord[];
   invoices: ClubInvoice[];
+  paymentRequests?: PaymentRequest[];
   announcements: ClubAnnouncement[];
   coaches?: Coach[];
   pools?: PoolFacility[];
@@ -68,6 +70,7 @@ interface OverviewViewProps {
   onOpenReminders: () => void;
   onOpenPrintReport: (kind: PrintReportKind) => void;
   onNavigate: (section: NavSection) => void;
+  onOpenVerificationQueue?: () => void;
   onLoadSampleData?: () => Promise<void>;
   seedingSample?: boolean;
 }
@@ -80,6 +83,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
   schedules,
   attendance,
   invoices,
+  paymentRequests = [],
   announcements,
   coaches = [],
   pools = [],
@@ -89,6 +93,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
   onOpenReminders,
   onOpenPrintReport,
   onNavigate,
+  onOpenVerificationQueue,
   onLoadSampleData,
   seedingSample,
 }) => {
@@ -210,8 +215,34 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
     };
   }, [invoices, athletes, currentMonth, currentYM]);
 
+  const pendingVerificationSummary = useMemo(() => {
+    const requestByInvoiceId = new Map<string, PaymentRequest>();
+    for (const pr of paymentRequests) {
+      if (pr.status === 'Menunggu Verifikasi' && pr.invoiceId) {
+        requestByInvoiceId.set(pr.invoiceId, pr);
+      }
+    }
+    let count = 0;
+    let amount = 0;
+    for (const inv of invoices) {
+      if (inv.status === 'Lunas' || inv.status === 'Dibatalkan') continue;
+      const hasPendingPr = requestByInvoiceId.has(inv.id);
+      if (inv.status === 'Menunggu Verifikasi' || hasPendingPr) {
+        count += 1;
+        amount += inv.amount;
+      }
+    }
+    return { count, amount, requestByInvoiceId };
+  }, [invoices, paymentRequests]);
+
   const unpaidInvoices = useMemo(
-    () => invoices.filter((i) => i.status === 'Belum Lunas' || i.status === 'Jatuh Tempo'),
+    () =>
+      invoices.filter(
+        (i) =>
+          i.status === 'Belum Lunas' ||
+          i.status === 'Jatuh Tempo' ||
+          i.status === 'Menunggu Verifikasi'
+      ),
     [invoices]
   );
 
@@ -538,15 +569,32 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                 </span>
               </div>
             </div>
-            <p className="text-[11px] text-slate-500 truncate">
-              {currentMonthBilling.activeWithoutSppCount > 0
-                ? `${currentMonthBilling.activeWithoutSppCount} atlet aktif belum diterbitkan SPP ${currentMonth}.`
-                : currentMonthBilling.totalCount === 0
-                ? `Gunakan Generator SPP Massal di Invoice & Adm untuk menerbitkan tagihan ${currentMonth}.`
-                : currentMonthBilling.overdueCount + currentMonthBilling.pendingCount === 0
-                ? `Seluruh tagihan periode ${currentMonth} telah lunas.`
-                : `${currentMonthBilling.pendingCount + currentMonthBilling.overdueCount} tagihan bulan ${currentMonth} menunggu pelunasan.`}
-            </p>
+            {pendingVerificationSummary.count > 0 ? (
+              <button
+                type="button"
+                onClick={() =>
+                  onOpenVerificationQueue ? onOpenVerificationQueue() : onNavigate('invoices')
+                }
+                className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-sky-50 border border-sky-200 text-xs text-sky-900 hover:bg-sky-100/80 transition-colors cursor-pointer text-left"
+              >
+                <span className="font-medium truncate">
+                  {pendingVerificationSummary.count} bukti bayar masuk ({formatRupiah(pendingVerificationSummary.amount)}) siap dikonfirmasi
+                </span>
+                <span className="font-semibold text-sky-800 whitespace-nowrap shrink-0 inline-flex items-center gap-0.5">
+                  Periksa <ArrowUpRight className="w-3.5 h-3.5" />
+                </span>
+              </button>
+            ) : (
+              <p className="text-[11px] text-slate-500 truncate">
+                {currentMonthBilling.activeWithoutSppCount > 0
+                  ? `${currentMonthBilling.activeWithoutSppCount} atlet aktif belum diterbitkan SPP ${currentMonth}.`
+                  : currentMonthBilling.totalCount === 0
+                  ? `Gunakan Generator SPP Massal di Invoice & Adm untuk menerbitkan tagihan ${currentMonth}.`
+                  : currentMonthBilling.overdueCount + currentMonthBilling.pendingCount === 0
+                  ? `Seluruh tagihan periode ${currentMonth} telah lunas.`
+                  : `${currentMonthBilling.pendingCount + currentMonthBilling.overdueCount} tagihan bulan ${currentMonth} menunggu pelunasan.`}
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -855,7 +903,11 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                       </div>
                       <div
                         className={`text-xs font-medium inline-flex items-center gap-1 ${
-                          inv.status === 'Jatuh Tempo' ? 'text-red-600' : 'text-amber-700'
+                          inv.status === 'Jatuh Tempo'
+                            ? 'text-red-600'
+                            : inv.status === 'Menunggu Verifikasi'
+                            ? 'text-sky-700'
+                            : 'text-amber-700'
                         }`}
                       >
                         {inv.status === 'Jatuh Tempo' ? (

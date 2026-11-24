@@ -45,6 +45,7 @@ export interface InvoiceMessageInput {
   amount: number;
   dueDate: string;
   status: string;
+  paymentPortalUrl?: string;
 }
 
 export function buildInvoiceNotificationMessage(
@@ -76,13 +77,20 @@ export function buildInvoiceNotificationMessage(
     }
     if (hasQris) {
       lines.push(
-        `• QRIS ${club.qrisMerchantName || club.name} tersedia pada lembar tagihan (nominal otomatis ${formatRupiah(inv.amount)}).`
+        `• QRIS ${club.qrisMerchantName || club.name} tersedia pada tautan pembayaran (nominal otomatis ${formatRupiah(inv.amount)}).`
       );
     }
   }
 
-  lines.push(``);
-  lines.push(`Mohon konfirmasi bukti pembayaran kepada admin klub setelah transaksi. Terima kasih.`);
+  if (inv.paymentPortalUrl) {
+    lines.push(``);
+    lines.push(`*Tautan QRIS & Unggah Bukti Bayar:*`);
+    lines.push(inv.paymentPortalUrl);
+    lines.push(`Silakan buka tautan di atas untuk membayar & mengunggah foto bukti transfer agar terdeteksi otomatis oleh admin.`);
+  } else {
+    lines.push(``);
+    lines.push(`Mohon konfirmasi bukti pembayaran kepada admin klub setelah transaksi. Terima kasih.`);
+  }
 
   return lines.join('\n');
 }

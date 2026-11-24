@@ -1,4 +1,3 @@
-import { useUrlState } from '../lib/urlState';
 import React, { useMemo, useState } from 'react';
 import {
   addDoc,
@@ -48,6 +47,7 @@ import {
 import { CashflowTrendChart } from './TrendCharts';
 import { ExportActionMenu } from './ExportActionMenu';
 import { BottomSheetSelect } from './BottomSheetSelect';
+import { useQueryParam } from '../lib/useQueryParams';
 
 interface FinanceViewProps {
   club: ClubProfile;
@@ -64,10 +64,14 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
   athletes,
   onOpenPrintReport,
 }) => {
-  const [filterType, setFilterType] = useUrlState<'all' | TransactionType>('finance.type', 'all', { values: ['all', 'pemasukan', 'pengeluaran'] });
-  const [filterCategory, setFilterCategory] = useUrlState<string>('finance.category', 'all');
-  const [searchQuery, setSearchQuery] = useUrlState<string>('finance.q', '');
-  const [monthFilter, setMonthFilter] = useUrlState<string>('finance.month', '');
+  const [filterType, setFilterType] = useQueryParam<'all' | TransactionType>(
+    'fin_tipe',
+    'all',
+    { allowed: ['all', 'pemasukan', 'pengeluaran'] }
+  );
+  const [filterCategory, setFilterCategory] = useQueryParam('fin_kat', 'all');
+  const [searchQuery, setSearchQuery] = useQueryParam('fin_q', '');
+  const [monthFilter, setMonthFilter] = useQueryParam('fin_bln', '');
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTx, setEditingTx] = useState<FinanceTransaction | null>(null);

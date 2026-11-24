@@ -1,4 +1,3 @@
-import { useUrlState } from '../lib/urlState';
 import React, { useMemo, useState } from 'react';
 import {
   addDoc,
@@ -68,6 +67,7 @@ import {
 import { AthleteCompetitionChart } from './TrendCharts';
 import { ExportActionMenu } from './ExportActionMenu';
 import { BottomSheetSelect } from './BottomSheetSelect';
+import { useQueryParam } from '../lib/useQueryParams';
 
 interface AthletesAndTimesViewProps {
   club: ClubProfile;
@@ -88,23 +88,42 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
   coaches = [],
   onOpenPrintReport,
 }) => {
-  const [activeTab, setActiveTab] = useUrlState<'athletes' | 'times'>('athletes.tab', 'athletes', { values: ['athletes', 'times'], history: 'push' });
-  const [showChart, setShowChart] = useUrlState<boolean>('athletes.chart', true);
+  const [activeTab, setActiveTab] = useQueryParam<'athletes' | 'times'>(
+    'at_tab',
+    'athletes',
+    { allowed: ['athletes', 'times'], history: 'push' }
+  );
+  const [showChartParam, setShowChartParam] = useQueryParam<'1' | '0'>('at_grafik', '1', {
+    allowed: ['1', '0'],
+  });
+  const showChart = showChartParam !== '0';
 
-  // Athlete filters
-  const [athleteSearch, setAthleteSearch] = useUrlState<string>('athletes.q', '');
-  const [ageGroupFilter, setAgeGroupFilter] = useUrlState<string>('athletes.age', 'all');
-  const [statusFilter, setStatusFilter] = useUrlState<string>('athletes.status', 'all');
-  const [coachFilter, setCoachFilter] = useUrlState<string>('athletes.coach', 'all');
+  // Athlete filters (synced to URL query params)
+  const [athleteSearch, setAthleteSearch] = useQueryParam('at_q', '');
+  const [ageGroupFilter, setAgeGroupFilter] = useQueryParam('at_ku', 'all');
+  const [statusFilter, setStatusFilter] = useQueryParam('at_status', 'all');
+  const [coachFilter, setCoachFilter] = useQueryParam('at_pelatih', 'all');
 
-  // Swim times filters
-  const [timeSearch, setTimeSearch] = useUrlState<string>('times.q', '');
-  const [strokeFilter, setStrokeFilter] = useUrlState<string>('times.stroke', 'all');
-  const [courseFilter, setCourseFilter] = useUrlState<string>('times.course', 'all');
-  const [onlyPB, setOnlyPB] = useUrlState<boolean>('times.pb', false);
+  // Swim times filters (synced to URL query params)
+  const [timeSearch, setTimeSearch] = useQueryParam('tm_q', '');
+  const [strokeFilter, setStrokeFilter] = useQueryParam('tm_gaya', 'all');
+  const [courseFilter, setCourseFilter] = useQueryParam('tm_kolam', 'all');
+  const [onlyPBParam, setOnlyPBParam] = useQueryParam<'0' | '1'>('tm_pb', '0', {
+    allowed: ['0', '1'],
+  });
+  const onlyPB = onlyPBParam === '1';
+  const setOnlyPB = (checked: boolean) => setOnlyPBParam(checked ? '1' : '0');
 
-  // Selected athlete detail drawer
-  const [detailAthlete, setDetailAthlete] = useState<Athlete | null>(null);
+  // Selected athlete detail drawer (synced to URL query params)
+  const [detailAthleteId, setDetailAthleteId] = useQueryParam('at_detail', '', {
+    history: 'push',
+  });
+  const detailAthlete = useMemo(
+    () => (detailAthleteId ? athletes.find((a) => a.id === detailAthleteId) || null : null),
+    [athletes, detailAthleteId]
+  );
+  const setDetailAthlete = (ath: Athlete | null) => setDetailAthleteId(ath ? ath.id : '');
+
   const [confirmDeleteAthleteId, setConfirmDeleteAthleteId] = useState<string | null>(null);
   const [confirmDeleteTimeId, setConfirmDeleteTimeId] = useState<string | null>(null);
   const [listError, setListError] = useState<string | null>(null);
@@ -728,7 +747,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
 
         <button
           type="button"
-          onClick={() => setShowChart((prev) => !prev)}
+          onClick={() => setShowChartParam(showChart ? '0' : '1')}
           className="inline-flex items-center justify-center gap-1.5 px-3 min-h-[40px] sm:min-h-[36px] text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 whitespace-nowrap shrink-0 cursor-pointer"
         >
           <BarChart3 className="w-3.5 h-3.5 text-sky-700" />

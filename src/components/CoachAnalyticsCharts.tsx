@@ -1,4 +1,3 @@
-import { useUrlState } from '../lib/urlState';
 import React, { useMemo, useState } from 'react';
 import {
   AGE_GROUPS,
@@ -22,6 +21,7 @@ import {
   Users,
 } from 'lucide-react';
 import { BottomSheetSelect } from './BottomSheetSelect';
+import { useQueryParam } from '../lib/useQueryParams';
 
 interface CoachAnalyticsChartsProps {
   coaches: Coach[];
@@ -93,14 +93,20 @@ export const CoachAnalyticsCharts: React.FC<CoachAnalyticsChartsProps> = ({
   attendance,
   swimTimes,
 }) => {
-  const [coachFilter, setCoachFilter] = useUrlState<string>('coachanalytics.coach', 'ALL');
-  const [sectionView, setSectionView] = useUrlState<'all' | 'attendance' | 'strokes'>('coachanalytics.section', 'all', { values: ['all', 'attendance', 'strokes'] });
-  const [weekMode, setWeekMode] = useUrlState<'4weeks' | 'latest'>('coachanalytics.weeks', '4weeks', { values: ['4weeks', 'latest'] });
+  const [coachFilter, setCoachFilter] = useQueryParam('ca_pelatih', 'ALL');
+  const [sectionView, setSectionView] = useQueryParam<'all' | 'attendance' | 'strokes'>(
+    'ca_lihat',
+    'all',
+    { allowed: ['all', 'attendance', 'strokes'] }
+  );
+  const [weekMode, setWeekMode] = useQueryParam<'4weeks' | 'latest'>('ca_pekan', '4weeks', {
+    allowed: ['4weeks', 'latest'],
+  });
 
   // Stroke trend filters
-  const [strokeFocus, setStrokeFocus] = useUrlState<string>('coachanalytics.stroke', 'ALL');
-  const [courseFilter, setCourseFilter] = useUrlState<string>('coachanalytics.course', 'ALL');
-  const [ageGroupFilter, setAgeGroupFilter] = useUrlState<string>('coachanalytics.age', 'ALL');
+  const [strokeFocus, setStrokeFocus] = useQueryParam('ca_gaya', 'ALL');
+  const [courseFilter, setCourseFilter] = useQueryParam('ca_kolam', 'ALL');
+  const [ageGroupFilter, setAgeGroupFilter] = useQueryParam('ca_ku', 'ALL');
   const [activePeriodIdx, setActivePeriodIdx] = useState<number | null>(null);
 
   const coachNames = useMemo(() => {
