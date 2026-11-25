@@ -77,7 +77,66 @@ export function getDayOfWeekFromDate(dateStr: string): DayOfWeek | null {
 export function isValidEmailFormat(value: string): boolean {
   const clean = value.trim();
   if (!clean) return true;
-  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(clean);
+  if (clean.length > 254 || /\s/.test(clean)) return false;
+
+  const parts = clean.split('@');
+  if (parts.length !== 2) return false;
+  const [local, domain] = parts;
+
+  if (
+    !local ||
+    local.length > 64 ||
+    local.startsWith('.') ||
+    local.endsWith('.') ||
+    local.includes('..')
+  ) {
+    return false;
+  }
+  if (!/^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+$/.test(local)) {
+    return false;
+  }
+
+  if (
+    !domain ||
+    domain.length > 253 ||
+    domain.startsWith('.') ||
+    domain.endsWith('.') ||
+    domain.includes('..')
+  ) {
+    return false;
+  }
+  const domainLabels = domain.split('.');
+  if (domainLabels.length < 2) return false;
+  const tld = domainLabels[domainLabels.length - 1];
+  if (!/^[a-zA-Z]{2,24}$/.test(tld)) return false;
+
+  return domainLabels.every((label) =>
+    /^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/.test(label)
+  );
+}
+
+export function validateEmailField(
+  value: string,
+  options?: {
+    label?: string;
+    maxLength?: number;
+    required?: boolean;
+  }
+): string | undefined {
+  const clean = value.trim();
+  const label = options?.label || 'email';
+  const maxLength = options?.maxLength ?? 100;
+
+  if (!clean) {
+    return options?.required ? `${label.charAt(0).toUpperCase() + label.slice(1)} wajib diisi.` : undefined;
+  }
+  if (clean.length > maxLength) {
+    return `${label.charAt(0).toUpperCase() + label.slice(1)} maksimal ${maxLength} karakter.`;
+  }
+  if (!isValidEmailFormat(clean)) {
+    return `Format ${label} tidak valid. Gunakan format standar seperti nama@domain.com.`;
+  }
+  return undefined;
 }
 
 export function isValidPhoneFormat(value: string): boolean {

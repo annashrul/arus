@@ -53,8 +53,11 @@ import {
   isValidPhoneFormat,
   LIMITS,
   normalizeEmail,
+  validateEmailField,
 } from '../lib/validation';
 import { syncCoachMemberAccess } from '../lib/roleAccess';
+import { verifyEmailDomainServer } from '../lib/emailVerification';
+import { EmailVerificationField } from './EmailVerificationField';
 import {
   buildCoachesSheet,
   buildCompetitionsSheet,
@@ -166,6 +169,7 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
   const [cFieldErrors, setCFieldErrors] = useState<
     FieldErrors<'fullName' | 'phone' | 'email' | 'monthlyHonorarium' | 'joinDate' | 'notes'>
   >({});
+  const [verifiedCoachEmails, setVerifiedCoachEmails] = useState<string[]>([]);
 
   // =========================
   // 2. POOLS STATE & FILTER
@@ -421,7 +425,8 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
     const errors: typeof cFieldErrors = {};
 
     const cleanName = clampString(cName, LIMITS.coach.fullNameMax);
-    const cleanEmail = normalizeEmail(clampString(cEmail, LIMITS.coach.emailMax));
+    const rawEmail = cEmail.trim();
+    const cleanEmail = normalizeEmail(rawEmail);
     const parsedHonor = Number(cHonor);
 
     if (cleanName.length < LIMITS.coach.fullNameMin) {
@@ -430,8 +435,13 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
     if (!isValidPhoneFormat(cPhone)) {
       errors.phone = 'Format telepon tidak valid (8–16 digit angka).';
     }
-    if (cleanEmail && !isValidEmailFormat(cleanEmail)) {
-      errors.email = 'Format email Google pelatih tidak valid.';
+    const coachEmailError = validateEmailField(rawEmail, {
+      label: 'email Google pelatih',
+      maxLength: LIMITS.coach.emailMax,
+      required: false,
+    });
+    if (coachEmailError) {
+      errors.email = coachEmailError;
     }
     if (
       cHonor.trim() === '' ||
@@ -454,7 +464,27 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
       return;
     }
 
+    if (cleanEmail && !isValidEmailFormat(cleanEmail)) {
+      setCFieldErrors((prev) => ({
+        ...prev,
+        email: 'Format email Google pelatih tidak valid. Gunakan format standar seperti nama@domain.com.',
+      }));
+      setCError('Format email Google pelatih tidak valid sebelum dikirim ke Firebase.');
+      return;
+    }
+
     setCSaving(true);
+    if (cleanEmail && !verifiedCoachEmails.includes(cleanEmail)) {
+      const domainCheck = await verifyEmailDomainServer(cleanEmail);
+      if (!domainCheck.unreachable && !domainCheck.valid) {
+        const msg = domainCheck.reason || 'Domain email pelatih tidak aktif atau tidak menerima email.';
+        setCFieldErrors((prev) => ({ ...prev, email: msg }));
+        setCError(msg);
+        setCSaving(false);
+        return;
+      }
+    }
+
     const payload = {
       fullName: cleanName,
       role: cRole,
@@ -2143,30 +2173,29 @@ export const ClubOperationsView: React.FC<ClubOperationsViewProps> = ({
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Email Google Pelatih (Opsional)
-                </label>
-                <input
-                  type="email"
-                  maxLength={LIMITS.coach.emailMax}
-                  value={cEmail}
-                  onChange={(e) => {
-                    setCEmail(e.target.value);
-                    setCFieldErrors((p) => ({ ...p, email: undefined }));
-                  }}
-                  placeholder="pelatih@gmail.com"
-                  className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg ${
-                    cFieldErrors.email ? 'border-red-400 bg-red-50/40' : 'border-slate-200'
-                  }`}
-                />
-                <p className="mt-1 text-[11px] text-slate-500">
-                  Mengisi email Google ini otomatis mengaktifkan akses login Pelatih (jadwal, presensi, waktu renang, dan catatan atlet).
-                </p>
-                {cFieldErrors.email && (
-                  <p className="text-[11px] text-red-600 mt-1">{cFieldErrors.email}</p>
-                )}
-              </div>
+              <EmailVerificationField
+                label="Email Google Pelatih (Opsional)"
+                email={cEmail}
+                onEmailChange={(next) => {
+                  setCEmail(next);
+                  setCFieldErrors((p) => ({ ...p, email: undefined }));
+                }}
+                error={cFieldErrors.email}
+                onErrorChange={(err) => setCFieldErrors((p) => ({ ...p, email: err }))}
+                maxLength={LIMITS.coach.emailMax}
+                placeholder="pelatih@gmail.com"
+                helperText="Mengisi email Google ini otomatis mengaktifkan akses login Pelatih (jadwal, presensi, waktu renang, dan catatan atlet)."
+                fieldLabelForError="email Google pelatih"
+                recipientName={cName}
+                roleLabel="Pelatih"
+                clubName={club.name}
+                verifiedEmails={verifiedCoachEmails}
+                onMarkVerified={(verifiedEmail) =>
+                  setVerifiedCoachEmails((prev) =>
+                    prev.includes(verifiedEmail) ? prev : [...prev, verifiedEmail]
+                  )
+                }
+              />
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>

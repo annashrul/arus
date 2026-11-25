@@ -18,8 +18,11 @@ import {
   LIMITS,
   normalizeEmail,
   normalizeTextKey,
+  validateEmailField,
 } from '../lib/validation';
 import { syncAthleteParentAccess } from '../lib/roleAccess';
+import { verifyEmailDomainServer } from '../lib/emailVerification';
+import { EmailVerificationField } from './EmailVerificationField';
 import {
   AGE_GROUPS,
   AgeGroup,
@@ -158,6 +161,7 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
   const [athleteError, setAthleteError] = useState<string | null>(null);
   const [athleteFieldErrors, setAthleteFieldErrors] = useState<FieldErrors<string>>({});
   const [savingAthlete, setSavingAthlete] = useState(false);
+  const [verifiedParentEmails, setVerifiedParentEmails] = useState<string[]>([]);
 
   // SwimTime modal state
   const [timeModalOpen, setTimeModalOpen] = useState(false);
@@ -341,7 +345,8 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
     const cleanName = clampString(fullName, LIMITS.athlete.fullNameMax);
     const cleanParentName = clampString(parentName, LIMITS.athlete.parentNameMax);
     const cleanParentPhone = clampString(parentPhone, LIMITS.athlete.parentPhoneMax);
-    const cleanParentEmail = normalizeEmail(clampString(parentEmail, LIMITS.athlete.parentEmailMax));
+    const rawParentEmail = parentEmail.trim();
+    const cleanParentEmail = normalizeEmail(rawParentEmail);
     const cleanCoach = clampString(coachName, LIMITS.athlete.coachNameMax);
     const parsedFee = Number(monthlyFee);
     const today = todayISO();
@@ -381,8 +386,13 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
     if (cleanParentPhone && !isValidPhoneFormat(cleanParentPhone)) {
       errors.parentPhone = 'Nomor WhatsApp wali harus berisi 8–16 digit angka yang valid.';
     }
-    if (cleanParentEmail && !isValidEmailFormat(cleanParentEmail)) {
-      errors.parentEmail = 'Format email Google wali murid tidak valid.';
+    const parentEmailError = validateEmailField(rawParentEmail, {
+      label: 'email Google wali murid',
+      maxLength: LIMITS.athlete.parentEmailMax,
+      required: false,
+    });
+    if (parentEmailError) {
+      errors.parentEmail = parentEmailError;
     }
     if (cleanCoach && cleanCoach.length < 2) {
       errors.coachName = 'Nama pelatih minimal 2 karakter jika diisi.';
@@ -419,6 +429,23 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
 
     setSavingAthlete(true);
     try {
+      if (cleanParentEmail && !isValidEmailFormat(cleanParentEmail)) {
+        setAthleteFieldErrors((prev) => ({
+          ...prev,
+          parentEmail: 'Format email Google wali murid tidak valid. Gunakan format standar seperti nama@domain.com.',
+        }));
+        setAthleteError('Format email Google wali murid tidak valid sebelum dikirim ke Firebase.');
+        return;
+      }
+      if (cleanParentEmail && !verifiedParentEmails.includes(cleanParentEmail)) {
+        const domainCheck = await verifyEmailDomainServer(cleanParentEmail);
+        if (!domainCheck.unreachable && !domainCheck.valid) {
+          const msg = domainCheck.reason || 'Domain email wali murid tidak aktif atau tidak menerima email.';
+          setAthleteFieldErrors((prev) => ({ ...prev, parentEmail: msg }));
+          setAthleteError(msg);
+          return;
+        }
+      }
       const payload = {
         fullName: cleanName,
         gender,
@@ -1848,30 +1875,31 @@ export const AthletesAndTimesView: React.FC<AthletesAndTimesViewProps> = ({
               </div>
 
               {!isCoach && (
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">
-                    Email Google Wali Murid (Opsional)
-                  </label>
-                  <input
-                    type="email"
-                    maxLength={LIMITS.athlete.parentEmailMax}
-                    value={parentEmail}
-                    onChange={(e) => {
-                      setParentEmail(e.target.value);
-                      clearAthleteError('parentEmail');
-                    }}
-                    placeholder="walimurid@gmail.com"
-                    className={`w-full px-3 min-h-[44px] sm:min-h-[38px] text-base sm:text-sm border rounded-lg ${
-                      athleteFieldErrors.parentEmail ? 'border-red-400 bg-red-50/30' : 'border-slate-200'
-                    }`}
-                  />
-                  <p className="mt-1 text-[11px] text-slate-500">
-                    Mengisi email Google ini otomatis mengaktifkan akses Portal Wali Murid untuk memantau perkembangan & tagihan anak.
-                  </p>
-                  {athleteFieldErrors.parentEmail && (
-                    <p className="mt-1 text-xs text-red-600">{athleteFieldErrors.parentEmail}</p>
-                  )}
-                </div>
+                <EmailVerificationField
+                  label="Email Google Wali Murid (Opsional)"
+                  email={parentEmail}
+                  onEmailChange={(next) => {
+                    setParentEmail(next);
+                    clearAthleteError('parentEmail');
+                  }}
+                  error={athleteFieldErrors.parentEmail}
+                  onErrorChange={(err) =>
+                    setAthleteFieldErrors((prev) => ({ ...prev, parentEmail: err }))
+                  }
+                  maxLength={LIMITS.athlete.parentEmailMax}
+                  placeholder="walimurid@gmail.com"
+                  helperText="Mengisi email Google ini otomatis mengaktifkan akses Portal Wali Murid untuk memantau perkembangan & tagihan anak."
+                  fieldLabelForError="email Google wali murid"
+                  recipientName={parentName || fullName}
+                  roleLabel="Wali Murid"
+                  clubName={club.name}
+                  verifiedEmails={verifiedParentEmails}
+                  onMarkVerified={(verifiedEmail) =>
+                    setVerifiedParentEmails((prev) =>
+                      prev.includes(verifiedEmail) ? prev : [...prev, verifiedEmail]
+                    )
+                  }
+                />
               )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
